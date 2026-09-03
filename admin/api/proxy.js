@@ -36,7 +36,12 @@ function buildUpstreamUrl(request) {
     request.url,
     `https://${request.headers.host || 'sentry-admin.local'}`,
   );
-  const apiPath = requestUrl.pathname.replace(/^\/api\/?/, '');
+  const rewrittenPath = request.query?.path;
+  const apiPath = (Array.isArray(rewrittenPath)
+    ? rewrittenPath.join('/')
+    : rewrittenPath || requestUrl.pathname.replace(/^\/api\/?/, '')
+  ).replace(/^\/+/, '');
+  requestUrl.searchParams.delete('path');
   const upstream = getUpstreamBaseUrl();
   upstream.pathname = `${upstream.pathname}/api/${apiPath}`.replace(/\/{2,}/g, '/');
   upstream.search = requestUrl.search;

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildUpstreamUrl,
   getUpstreamBaseUrl,
-} from '../../api/[...path].js';
+} from '../../api/proxy.js';
 
 const originalApiUrl = process.env.SENTRY_API_URL;
 
@@ -40,6 +40,20 @@ describe('Vercel Sentry API proxy', () => {
     });
 
     expect(upstream.toString()).toBe('https://example.com/sentry/api/health');
+  });
+
+  it('uses the explicit Vercel rewrite path and removes it from the query string', () => {
+    process.env.SENTRY_API_URL = 'https://sentry-api.example.com';
+
+    const upstream = buildUpstreamUrl({
+      url: '/api/proxy?path=auth/login&next=dashboard',
+      headers: { host: 'sentry-admin.vercel.app' },
+      query: { path: 'auth/login', next: 'dashboard' },
+    });
+
+    expect(upstream.toString()).toBe(
+      'https://sentry-api.example.com/api/auth/login?next=dashboard',
+    );
   });
 
   it('rejects missing and non-http upstream URLs', () => {
