@@ -20,19 +20,19 @@ const COLOR_OTHER = '#c4722a'; // Copper (every other user)
 
 const EVENT_LABELS = {
   // picking is measured in distinct orders, not units.
-  picking:       { title: 'Picking',      unit: 'orders' },
-  packing:       { title: 'Packing',      unit: 'units' },
-  shipped:       { title: 'Shipped',      unit: 'orders' },
-  received_skus: { title: 'Received',     unit: 'unique SKUs' },
-  putaway_skus:  { title: 'Put Away',     unit: 'unique SKUs' },
+  picking:       { title: 'Colectare',     unit: 'comenzi' },
+  packing:       { title: 'Ambalare',      unit: 'unități' },
+  shipped:       { title: 'Expediate',     unit: 'comenzi' },
+  received_skus: { title: 'Recepționate', unit: 'SKU-uri unice' },
+  putaway_skus:  { title: 'Depozitate',    unit: 'SKU-uri unice' },
 };
 
 const RANGE_PRESETS = [
-  { key: 'today',     label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'last_7d',   label: 'Last 7d' },
-  { key: 'last_30d',  label: 'Last 30d' },
-  { key: 'custom',    label: 'Custom' },
+  { key: 'today',     label: 'Astăzi' },
+  { key: 'yesterday', label: 'Ieri' },
+  { key: 'last_7d',   label: 'Ultimele 7 zile' },
+  { key: 'last_30d',  label: 'Ultimele 30 de zile' },
+  { key: 'custom',    label: 'Personalizat' },
 ];
 
 function isoDate(d) {
@@ -104,7 +104,7 @@ function EventCard({ slug, payload, onExpand, isExpanded }) {
       </div>
       <div style={styles.cardSubheader}>{meta.unit}</div>
       {users.length === 0 ? (
-        <div style={styles.cardEmpty}>No data for this range.</div>
+        <div style={styles.cardEmpty}>Nu există date pentru această perioadă.</div>
       ) : (
         <div style={styles.barChart}>
           {users.map((u, idx) => {
@@ -133,7 +133,7 @@ function ProductivityTable({ payload }) {
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-          <th style={{ ...styles.th, textAlign: 'left' }}>User</th>
+          <th style={{ ...styles.th, textAlign: 'left' }}>Utilizator</th>
           {events.map((slug) => (
             <th key={slug} style={{ ...styles.th, textAlign: 'right' }}>
               {EVENT_LABELS[slug]?.title || slug}
@@ -159,7 +159,7 @@ function ProductivityTable({ payload }) {
         {(payload.users || []).length === 0 && (
           <tr>
             <td colSpan={events.length + 2} style={{ ...styles.td, color: 'var(--text-secondary)' }}>
-              No data for this range.
+              Nu există date pentru această perioadă.
             </td>
           </tr>
         )}
@@ -186,28 +186,28 @@ export default function Dashboard() {
           className={`data-tab${tab === 'productivity' ? ' active' : ''}`}
           onClick={() => setTab('productivity')}
         >
-          Productivity
+          Productivitate
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'received' ? ' active' : ''}`}
           onClick={() => setTab('received')}
         >
-          Received
+          Recepționate
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'shipping' ? ' active' : ''}`}
           onClick={() => setTab('shipping')}
         >
-          Marketplace Health
+          Stare marketplace-uri
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'local-pickup' ? ' active' : ''}`}
           onClick={() => setTab('local-pickup')}
         >
-          Local Pickup
+          Ridicare locală
         </button>
       </div>
       {tab === 'productivity' && <ProductivityView warehouseId={warehouseId} />}

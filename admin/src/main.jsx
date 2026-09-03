@@ -4,7 +4,10 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './auth.jsx'
 import { WarehouseProvider } from './warehouse.jsx'
 import App from './App.jsx'
+import { installRomanianUi } from './i18n/ro.js'
 import './App.css'
+
+installRomanianUi()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -210,7 +210,7 @@ describe('Related Records tab', () => {
     });
 
     const back = screen.getByTestId('modal-back');
-    expect(back.getAttribute('title')).toBe('Back to SO-1');
+    expect(back.getAttribute('title')).toBe('Înapoi la SO-1');
     await act(async () => { fireEvent.click(back); });
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 2 }).textContent)

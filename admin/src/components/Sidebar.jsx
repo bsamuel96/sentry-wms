@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useWarehouse } from '../warehouse.jsx';
+import { t } from '../i18n/ro.js';
 
 // Each NAV item carries a page_key matching api/constants.py
 // ALL_PAGE_KEYS. Sidebar filters by the user's allowed_pages so a
@@ -189,7 +190,7 @@ export default function Sidebar() {
                 userSelect: 'none',
               }}
             >
-              <span>{group.label}</span>
+              <span>{t(group.label)}</span>
               <span style={{ fontSize: 10, opacity: 0.7 }} aria-hidden>
                 {isCollapsed ? '▸' : '▾'}
               </span>
@@ -203,7 +204,7 @@ export default function Sidebar() {
                   `sidebar-link${isActive ? ' active' : ''}`
                 }
               >
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
                 {counts[item.to] > 0 && (
                   <span className="sidebar-badge">{counts[item.to]}</span>
                 )}

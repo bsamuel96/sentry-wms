@@ -92,10 +92,10 @@ describe('ProtectedRoute redirects to /change-password when flag is set', () => 
     vi.stubGlobal('fetch', mockFetch({ meBody: ADMIN_FORCED }));
     mount('/');
     await waitFor(() => {
-      expect(screen.getByText(/First-time setup/i)).toBeInTheDocument();
+      expect(screen.getByText(/Configurare inițială/i)).toBeInTheDocument();
     });
     expect(
-      screen.getByRole('heading', { name: /Change Password/i }),
+      screen.getByRole('heading', { name: /Schimbare parolă/i }),
     ).toBeInTheDocument();
   });
 
@@ -103,7 +103,7 @@ describe('ProtectedRoute redirects to /change-password when flag is set', () => 
     vi.stubGlobal('fetch', mockFetch({ meBody: ADMIN_FORCED }));
     mount('/inventory');
     await waitFor(() => {
-      expect(screen.getByText(/First-time setup/i)).toBeInTheDocument();
+      expect(screen.getByText(/Configurare inițială/i)).toBeInTheDocument();
     });
   });
 
@@ -111,7 +111,7 @@ describe('ProtectedRoute redirects to /change-password when flag is set', () => 
     vi.stubGlobal('fetch', mockFetch({ meBody: ADMIN_FORCED }));
     mount('/users');
     await waitFor(() => {
-      expect(screen.getByText(/First-time setup/i)).toBeInTheDocument();
+      expect(screen.getByText(/Configurare inițială/i)).toBeInTheDocument();
     });
   });
 
@@ -119,7 +119,7 @@ describe('ProtectedRoute redirects to /change-password when flag is set', () => 
     vi.stubGlobal('fetch', mockFetch({ meBody: ADMIN_FORCED }));
     mount('/change-password');
     await waitFor(() => {
-      expect(screen.getByText(/First-time setup/i)).toBeInTheDocument();
+      expect(screen.getByText(/Configurare inițială/i)).toBeInTheDocument();
     });
   });
 });
@@ -131,8 +131,8 @@ describe('forced-mode change-password UI', () => {
     await waitFor(() => {
       const banner = screen.getByRole('alert');
       expect(banner).toBeInTheDocument();
-      expect(banner.textContent).toMatch(/First-time setup/i);
-      expect(banner.textContent).toMatch(/new admin password/i);
+      expect(banner.textContent).toMatch(/Configurare inițială/i);
+      expect(banner.textContent).toMatch(/parolă nouă de administrator/i);
     });
   });
 
@@ -141,11 +141,11 @@ describe('forced-mode change-password UI', () => {
     mount('/change-password');
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /Change password/i }),
+        screen.getByRole('button', { name: /Schimbă parola/i }),
       ).toBeInTheDocument();
     });
     expect(
-      screen.queryByRole('button', { name: /^Cancel$/ }),
+      screen.queryByRole('button', { name: /^Anulează$/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -153,7 +153,7 @@ describe('forced-mode change-password UI', () => {
     vi.stubGlobal('fetch', mockFetch({ meBody: ADMIN_FORCED }));
     const { container } = mount('/change-password');
     await waitFor(() => {
-      expect(screen.getByText(/First-time setup/i)).toBeInTheDocument();
+      expect(screen.getByText(/Configurare inițială/i)).toBeInTheDocument();
     });
     // No sidebar nav should render when the sidebar is skipped.
     expect(container.querySelector('.sidebar')).toBeNull();
@@ -171,7 +171,7 @@ describe('non-forced flow is unchanged', () => {
       expect(container.querySelector('.sidebar')).toBeTruthy();
     });
     // No forced-change banner.
-    expect(screen.queryByText(/First-time setup/i)).toBeNull();
+    expect(screen.queryByText(/Configurare inițială/i)).toBeNull();
     // No forced-change class on the layout.
     expect(container.querySelector('.app-layout.forced-change')).toBeNull();
   });
@@ -181,7 +181,7 @@ describe('non-forced flow is unchanged', () => {
     mount('/inventory');
     // Nothing should redirect them to /change-password.
     await waitFor(() => {
-      expect(screen.queryByText(/First-time setup/i)).toBeNull();
+      expect(screen.queryByText(/Configurare inițială/i)).toBeNull();
     });
   });
 });
@@ -192,11 +192,11 @@ describe('Cancel button visibility toggles with the flag', () => {
     mount('/change-password');
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /Change password/i }),
+        screen.getByRole('button', { name: /Schimbă parola/i }),
       ).toBeInTheDocument();
     });
     expect(
-      screen.getByRole('button', { name: /^Cancel$/ }),
+      screen.getByRole('button', { name: /^Anulează$/ }),
     ).toBeInTheDocument();
     // And no banner.
     expect(screen.queryByRole('alert')).toBeNull();
@@ -263,7 +263,7 @@ describe('post-change redirect (issue #98, Fruxh-reported)', () => {
 
     // Wait for the forced-mode screen to land.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /Change Password/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Schimbare parolă/i })).toBeInTheDocument();
     });
 
     // Fill the three password fields and submit. The labels are not
@@ -274,7 +274,7 @@ describe('post-change redirect (issue #98, Fruxh-reported)', () => {
     fireEvent.change(passwordInputs[1], { target: { value: 'NewPass123' } });
     fireEvent.change(passwordInputs[2], { target: { value: 'NewPass123' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /Change password/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Schimbă parola/i }));
 
     // Post-fix expected behaviour:
     //   - operator lands on /login
@@ -286,12 +286,12 @@ describe('post-change redirect (issue #98, Fruxh-reported)', () => {
     //   - no "Please sign in" text
     await waitFor(
       () => {
-        expect(screen.getByText(/Please sign in with your new password/i)).toBeInTheDocument();
+        expect(screen.getByText(/Autentifică-te folosind noua parolă/i)).toBeInTheDocument();
       },
       { timeout: 3000 },
     );
 
     // And the forced-mode banner from /change-password is gone.
-    expect(screen.queryByText(/First-time setup/i)).toBeNull();
+    expect(screen.queryByText(/Configurare inițială/i)).toBeNull();
   });
 });

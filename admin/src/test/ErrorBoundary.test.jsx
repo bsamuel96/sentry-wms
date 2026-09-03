@@ -44,9 +44,9 @@ describe('ErrorBoundary', () => {
         <ProblemChild />
       </ErrorBoundary>
     );
-    expect(screen.getByText('Something went wrong')).toBeTruthy();
-    expect(screen.getByText('This section encountered an error. Try refreshing.')).toBeTruthy();
-    expect(screen.getByText('Retry')).toBeTruthy();
+    expect(screen.getByText('A apărut o problemă')).toBeTruthy();
+    expect(screen.getByText('Această secțiune a întâmpinat o eroare. Încearcă să reîncarci pagina.')).toBeTruthy();
+    expect(screen.getByText('Reîncearcă')).toBeTruthy();
   });
 
   it('shows custom fallbackMessage', () => {
@@ -55,7 +55,7 @@ describe('ErrorBoundary', () => {
         <ProblemChild />
       </ErrorBoundary>
     );
-    expect(screen.getByText('Could not load inventory.')).toBeTruthy();
+    expect(screen.getByText('Nu s-a putut încărca stocul.')).toBeTruthy();
   });
 
   it('resets error state when Retry is clicked', () => {
@@ -74,11 +74,11 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeTruthy();
+    expect(screen.getByText('A apărut o problemă')).toBeTruthy();
 
     // Fix the child before clicking retry
     shouldThrow = false;
-    fireEvent.click(screen.getByText('Retry'));
+    fireEvent.click(screen.getByText('Reîncearcă'));
 
     expect(screen.getByText('Recovered')).toBeTruthy();
   });

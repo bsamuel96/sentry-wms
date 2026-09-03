@@ -64,7 +64,7 @@ describe('unauthenticated bootstrap', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Sign in')).toBeInTheDocument();
+      expect(screen.getByText('Autentificare')).toBeInTheDocument();
     });
 
     const urls = fetchSpy.mock.calls.map(([u]) => (typeof u === 'string' ? u : u.url));
@@ -86,7 +86,7 @@ describe('unauthenticated bootstrap', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Sign in')).toBeInTheDocument();
+      expect(screen.getByText('Autentificare')).toBeInTheDocument();
     });
   });
 });

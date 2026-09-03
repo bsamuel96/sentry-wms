@@ -7,11 +7,11 @@ import { api } from '../api.js';
 const SEARCH_DEBOUNCE_MS = 250;
 
 const RESULT_TYPE_LABEL = {
-  item: 'Item',
-  bin: 'Bin',
-  po: 'PO',
-  so: 'SO',
-  customer: 'Customer',
+  item: 'Produs',
+  bin: 'Locație',
+  po: 'Aprovizionare',
+  so: 'Vânzare',
+  customer: 'Client',
 };
 
 function resultRoute(r) {
@@ -165,7 +165,7 @@ export default function TopBar({ forced = false }) {
         {serverVersion && (
           <span
             className="topbar-version"
-            title={`API version ${serverVersion}`}
+            title={`Versiune API ${serverVersion}`}
             style={{
               marginLeft: 10,
               fontSize: 13,
@@ -210,7 +210,7 @@ export default function TopBar({ forced = false }) {
       {!forced && <div className="topbar-search" ref={searchRef} style={{ position: 'relative' }}>
         <input
           type="text"
-          placeholder="Search items, bins, orders..."
+          placeholder="Caută produse, locații, comenzi…"
           value={searchQuery}
           onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
           onFocus={() => { if (searchQuery.trim().length >= 2) setSearchOpen(true); }}
@@ -220,12 +220,12 @@ export default function TopBar({ forced = false }) {
           <div className="topbar-wh-dropdown" style={{ minWidth: 320, maxHeight: 360, overflowY: 'auto' }}>
             {searchLoading && (
               <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
-                Searching…
+                Se caută…
               </div>
             )}
             {!searchLoading && searchResults.length === 0 && (
               <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
-                No matches
+                Nicio potrivire
               </div>
             )}
             {!searchLoading && searchResults.map((r, idx) => {
@@ -258,7 +258,7 @@ export default function TopBar({ forced = false }) {
             </div>
             <div className="topbar-dropdown-divider" />
             <button className="topbar-dropdown-item" onClick={logout}>
-              Logout
+              Deconectare
             </button>
           </div>
         )}

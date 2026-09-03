@@ -20,7 +20,7 @@ export default function ChangePassword() {
     setError('');
 
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match.');
+      setError('Parolele noi nu coincid.');
       return;
     }
 
@@ -32,7 +32,7 @@ export default function ChangePassword() {
 
     if (!res || !res.ok) {
       const data = res ? await res.json().catch(() => ({})) : {};
-      setError(friendlyError(data, 'Could not change password. Please try again.'));
+      setError(friendlyError(data, 'Parola nu a putut fi schimbată. Încearcă din nou.'));
       setSubmitting(false);
       return;
     }
@@ -49,7 +49,7 @@ export default function ChangePassword() {
     try {
       sessionStorage.setItem(
         'login_flash_message',
-        'Password changed. Please sign in with your new password.',
+        'Parola a fost schimbată. Autentifică-te folosind noua parolă.',
       );
     } catch {
       // Private mode or disabled storage: operator still gets a
@@ -75,17 +75,17 @@ export default function ChangePassword() {
             lineHeight: 1.4,
           }}
         >
-          <strong>First-time setup:</strong> please choose a new admin password before continuing.
+          <strong>Configurare inițială:</strong> alege o parolă nouă de administrator înainte de a continua.
         </div>
       )}
 
-      <h2 style={{ marginTop: 0, marginBottom: 20 }}>Change Password</h2>
+      <h2 style={{ marginTop: 0, marginBottom: 20 }}>Schimbare parolă</h2>
 
       {error && <div className="login-error" style={{ marginBottom: 16 }}>{error}</div>}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label>Current password</label>
+          <label>Parola actuală</label>
           <input
             className="form-input"
             type="password"
@@ -98,7 +98,7 @@ export default function ChangePassword() {
         </div>
 
         <div className="form-group">
-          <label>New password</label>
+          <label>Parola nouă</label>
           <input
             className="form-input"
             type="password"
@@ -108,12 +108,12 @@ export default function ChangePassword() {
             required
           />
           <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>
-            At least 8 characters, one letter and one digit. Cannot be "admin".
+            Minimum 8 caractere, cel puțin o literă și o cifră. Nu poate fi „admin”.
           </div>
         </div>
 
         <div className="form-group">
-          <label>Confirm new password</label>
+          <label>Confirmă parola nouă</label>
           <input
             className="form-input"
             type="password"
@@ -126,7 +126,7 @@ export default function ChangePassword() {
 
         <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Saving...' : 'Change password'}
+            {submitting ? 'Se salvează…' : 'Schimbă parola'}
           </button>
           {!forced && (
             <button
@@ -135,7 +135,7 @@ export default function ChangePassword() {
               onClick={() => navigate(-1)}
               disabled={submitting}
             >
-              Cancel
+              Anulează
             </button>
           )}
         </div>

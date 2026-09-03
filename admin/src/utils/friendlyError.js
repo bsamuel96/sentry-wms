@@ -12,25 +12,25 @@
 // they are end-user oriented (not internal diagnostics). Keys map to
 // the user-facing string the UI should show.
 const KNOWN_ERROR_MESSAGES = {
-  validation_error: 'One or more fields have invalid values.',
-  unsupported_media_type: 'That request format is not supported.',
-  'Invalid username or password': 'Wrong username or password.',
-  'Account disabled or deleted': 'Your account is no longer active. Contact an admin.',
-  'Token expired': 'Your session has expired. Please sign in again.',
-  Unauthorized: 'You need to sign in to continue.',
-  Forbidden: 'You do not have permission for that action.',
-  'CSRF token missing or invalid': 'Your session is out of sync. Refresh the page and try again.',
-  'Access denied for this warehouse': 'You do not have access to that warehouse.',
-  'Current password is incorrect': 'Current password is incorrect.',
-  'User not found': 'Account not found.',
-  "Password cannot be 'admin'": "Password cannot be 'admin'.",
-  'Password must be at least 8 characters': 'Password must be at least 8 characters.',
-  'Password must contain at least one letter': 'Password must contain at least one letter.',
-  'Password must contain at least one digit': 'Password must contain at least one digit.',
-  password_change_required: 'You must change your password before continuing.',
+  validation_error: 'Unul sau mai multe câmpuri conțin valori nevalide.',
+  unsupported_media_type: 'Formatul cererii nu este acceptat.',
+  'Invalid username or password': 'Utilizator sau parolă incorectă.',
+  'Account disabled or deleted': 'Contul nu mai este activ. Contactează un administrator.',
+  'Token expired': 'Sesiunea a expirat. Autentifică-te din nou.',
+  Unauthorized: 'Trebuie să te autentifici pentru a continua.',
+  Forbidden: 'Nu ai permisiunea necesară pentru această acțiune.',
+  'CSRF token missing or invalid': 'Sesiunea nu mai este sincronizată. Reîncarcă pagina și încearcă din nou.',
+  'Access denied for this warehouse': 'Nu ai acces la acest depozit.',
+  'Current password is incorrect': 'Parola actuală este incorectă.',
+  'User not found': 'Contul nu a fost găsit.',
+  "Password cannot be 'admin'": 'Parola nu poate fi „admin”.',
+  'Password must be at least 8 characters': 'Parola trebuie să aibă minimum 8 caractere.',
+  'Password must contain at least one letter': 'Parola trebuie să conțină cel puțin o literă.',
+  'Password must contain at least one digit': 'Parola trebuie să conțină cel puțin o cifră.',
+  password_change_required: 'Trebuie să schimbi parola înainte de a continua.',
 };
 
-export function friendlyError(payload, fallback = 'Something went wrong. Please try again.') {
+export function friendlyError(payload, fallback = 'A apărut o problemă. Încearcă din nou.') {
   if (!payload || typeof payload !== 'object') return fallback;
   const code = payload.error;
   if (code && Object.prototype.hasOwnProperty.call(KNOWN_ERROR_MESSAGES, code)) {

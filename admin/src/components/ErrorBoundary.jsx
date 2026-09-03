@@ -1,5 +1,6 @@
 import React from 'react';
 import { logBoundaryError } from '../utils/safeLogging';
+import { t } from '../i18n/ro.js';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -32,9 +33,11 @@ class ErrorBoundary extends React.Component {
           borderRadius: '8px',
           margin: '1rem'
         }}>
-          <h2 style={{ color: '#8e2716' }}>Something went wrong</h2>
+          <h2 style={{ color: '#8e2716' }}>A apărut o problemă</h2>
           <p style={{ color: '#666' }}>
-            {this.props.fallbackMessage || 'This section encountered an error. Try refreshing.'}
+            {this.props.fallbackMessage
+              ? t(this.props.fallbackMessage)
+              : 'Această secțiune a întâmpinat o eroare. Încearcă să reîncarci pagina.'}
           </p>
           <button
             onClick={this.reset}
@@ -47,7 +50,7 @@ class ErrorBoundary extends React.Component {
               cursor: 'pointer'
             }}
           >
-            Retry
+            Reîncearcă
           </button>
         </div>
       );

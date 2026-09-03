@@ -74,9 +74,9 @@ describe('DataTable CSV export', () => {
       { po_number: 'PO-002', status: 'RECEIVED' },
     ];
     const { getByText } = renderTable(columns, data);
-    const csv = captureExportedCsv(getByText('Export CSV'));
+    const csv = captureExportedCsv(getByText('Exportă CSV'));
 
-    expect(csv).toContain('Status');
+    expect(csv).toContain('Stare');
     expect(csv).toContain('OPEN');
     expect(csv).toContain('RECEIVED');
     expect(csv).not.toContain('[object Object]');
@@ -93,7 +93,7 @@ describe('DataTable CSV export', () => {
     ];
     const data = [{ sku: 'A-1', on_hand: 10, committed: 3 }];
     const { getByText } = renderTable(columns, data);
-    const csv = captureExportedCsv(getByText('Export CSV'));
+    const csv = captureExportedCsv(getByText('Exportă CSV'));
 
     expect(csv).toContain('7');
     expect(csv).not.toContain('[object Object]');
@@ -111,7 +111,7 @@ describe('DataTable CSV export', () => {
     ];
     const data = [{ sku: 'A-1', status: 'OPEN' }];
     const { getByText } = renderTable(columns, data);
-    const csv = captureExportedCsv(getByText('Export CSV'));
+    const csv = captureExportedCsv(getByText('Exportă CSV'));
 
     expect(csv).toContain('STATUS[OPEN]');
     expect(csv).not.toContain('[object Object]');
@@ -124,7 +124,7 @@ describe('DataTable CSV export', () => {
     ];
     const data = [{ sku: 'A-1', status: 'CLOSED' }];
     const { getByText } = renderTable(columns, data);
-    const csv = captureExportedCsv(getByText('Export CSV'));
+    const csv = captureExportedCsv(getByText('Exportă CSV'));
 
     expect(csv).toContain('CLOSED');
   });

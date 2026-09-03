@@ -70,7 +70,7 @@ function wire() {
 
 async function openLocalPickupTab() {
   const view = render(<MemoryRouter><Dashboard /></MemoryRouter>);
-  fireEvent.click(await view.findByText('Local Pickup'));
+  fireEvent.click(await view.findByText('Ridicare locală'));
   return view;
 }
 

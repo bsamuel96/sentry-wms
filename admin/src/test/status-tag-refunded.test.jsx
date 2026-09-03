@@ -11,13 +11,13 @@ import StatusTag from '../components/StatusTag.jsx';
 describe('StatusTag REFUNDED', () => {
   it('renders REFUNDED with a distinct (non-cancelled) colour', () => {
     const { getByText } = render(<StatusTag status="REFUNDED" />);
-    const el = getByText('REFUNDED');
+    const el = getByText('RAMBURSATĂ');
     expect(el.className).toContain('tag-warning');
     expect(el.className).not.toContain('tag-gray');
   });
 
   it('still renders CANCELLED as gray', () => {
     const { getByText } = render(<StatusTag status="CANCELLED" />);
-    expect(getByText('CANCELLED').className).toContain('tag-gray');
+    expect(getByText('ANULATĂ').className).toContain('tag-gray');
   });
 });

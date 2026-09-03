@@ -8,19 +8,19 @@ import { friendlyError } from '../utils/friendlyError.js';
 describe('friendlyError', () => {
   it('maps known error codes to user-friendly strings', () => {
     expect(friendlyError({ error: 'validation_error' })).toBe(
-      'One or more fields have invalid values.'
+      'Unul sau mai multe câmpuri conțin valori nevalide.'
     );
     expect(friendlyError({ error: 'Invalid username or password' })).toBe(
-      'Wrong username or password.'
+      'Utilizator sau parolă incorectă.'
     );
     expect(friendlyError({ error: 'CSRF token missing or invalid' })).toBe(
-      'Your session is out of sync. Refresh the page and try again.'
+      'Sesiunea nu mai este sincronizată. Reîncarcă pagina și încearcă din nou.'
     );
   });
 
   it('returns fallback for unknown error codes', () => {
     expect(friendlyError({ error: 'some_internal_code' })).toBe(
-      'Something went wrong. Please try again.'
+      'A apărut o problemă. Încearcă din nou.'
     );
   });
 
@@ -42,12 +42,12 @@ describe('friendlyError', () => {
   });
 
   it('handles null/non-object payloads safely', () => {
-    expect(friendlyError(null)).toBe('Something went wrong. Please try again.');
-    expect(friendlyError(undefined)).toBe('Something went wrong. Please try again.');
-    expect(friendlyError('some string')).toBe('Something went wrong. Please try again.');
+    expect(friendlyError(null)).toBe('A apărut o problemă. Încearcă din nou.');
+    expect(friendlyError(undefined)).toBe('A apărut o problemă. Încearcă din nou.');
+    expect(friendlyError('some string')).toBe('A apărut o problemă. Încearcă din nou.');
   });
 
   it('handles payload with no error field', () => {
-    expect(friendlyError({})).toBe('Something went wrong. Please try again.');
+    expect(friendlyError({})).toBe('A apărut o problemă. Încearcă din nou.');
   });
 });

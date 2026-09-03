@@ -118,7 +118,7 @@ describe('Backorders queue click-through ()', () => {
     expect(screen.queryByText('SALES ORDERS PAGE')).toBeNull();
     expect(here.path.startsWith('/backorders')).toBe(true);
     // ...and the queue is still behind it.
-    expect(screen.getByText('Backorders')).toBeTruthy();
+    expect(screen.getByText('Comenzi restante')).toBeTruthy();
   });
 
   it('defaults to the Waiting tab and puts it in the URL when switched', async () => {

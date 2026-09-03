@@ -99,7 +99,7 @@ export default function DataTable({
 }) {
   function exportCSV() {
     if (!data || data.length === 0) return;
-    const headers = columns.map((c) => c.label);
+    const headers = columns.map((c) => t(c.label));
     const rows = data.map((row) =>
       columns.map((c) => sanitizeCsvValue(computeCellValue(c, row)))
     );
@@ -130,7 +130,7 @@ export default function DataTable({
                   style={isSortable ? { cursor: 'pointer', userSelect: 'none' } : undefined}
                   onClick={isSortable ? () => onSort(col.key) : undefined}
                 >
-                  {col.label}
+                  {t(col.label)}
                   {isActive && (
                     <span style={{ marginLeft: 4, fontSize: 10 }}>
                       {sortDir === 'asc' ? '\u25B2' : '\u25BC'}
@@ -145,7 +145,7 @@ export default function DataTable({
           {(!data || data.length === 0) ? (
             <tr>
               <td colSpan={columns.length} className="table-empty">
-                {emptyMessage}
+                {t(emptyMessage)}
               </td>
             </tr>
           ) : (
@@ -186,25 +186,25 @@ export default function DataTable({
       {pagination && (
         <div className="pagination">
           <span>
-            Page {pagination.page} of {pagination.pages} ({pagination.total} total)
+            Pagina {pagination.page} din {pagination.pages} ({pagination.total} în total)
           </span>
           <div className="pagination-buttons">
             <button className="btn-sm btn" onClick={exportCSV} style={{ marginRight: 8 }}>
-              Export CSV
+              Exportă CSV
             </button>
             <button
               className="pagination-btn"
               disabled={pagination.page <= 1}
               onClick={() => onPageChange(pagination.page - 1)}
             >
-              Prev
+              Înapoi
             </button>
             <button
               className="pagination-btn"
               disabled={pagination.page >= pagination.pages}
               onClick={() => onPageChange(pagination.page + 1)}
             >
-              Next
+              Înainte
             </button>
           </div>
         </div>
@@ -212,3 +212,4 @@ export default function DataTable({
     </div>
   );
 }
+import { t } from '../i18n/ro.js';

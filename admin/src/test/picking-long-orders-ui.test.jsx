@@ -90,7 +90,7 @@ describe('PickingTickets Long Orders toggle', () => {
     await waitFor(() => expect(screen.getByText('SO-2001')).toBeInTheDocument());
     ['SO-2002', 'SO-2003', 'SO-2004', 'SO-2005'].forEach((n) =>
       expect(screen.getByText(n)).toBeInTheDocument());
-    expect(screen.queryByRole('columnheader', { name: 'Items' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Produse' })).toBeNull();
   });
 
   it('keeps only 5+-line orders and shows the Items count when toggled on', async () => {
@@ -107,7 +107,7 @@ describe('PickingTickets Long Orders toggle', () => {
     expect(screen.queryByText('SO-2003')).toBeNull();
     expect(screen.queryByText('SO-2004')).toBeNull();
     // Items column appears and shows the counts.
-    expect(screen.getByRole('columnheader', { name: 'Items' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Produse' })).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
   });
 
@@ -124,7 +124,7 @@ describe('PickingTickets Long Orders toggle', () => {
     expect(screen.getByText('SO-2002')).toBeInTheDocument();
     // Both the Group and Items columns are present in the combined view.
     expect(screen.getByRole('columnheader', { name: 'Group' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Items' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Produse' })).toBeInTheDocument();
   });
 
   it('shows a long-specific empty-state when no order is long', async () => {

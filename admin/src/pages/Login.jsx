@@ -39,13 +39,17 @@ export default function Login() {
       if (userData && userData.role !== 'ADMIN') {
         // V-045: the login() context function already called /auth/logout
         // to clear the cookies for non-admin users. Just surface the error.
-        setError('Not authorized, contact admin');
+        setError('Nu ai drepturi de acces. Contactează administratorul.');
         setLoading(false);
         return;
       }
       navigate('/');
     } catch (err) {
-      setError(err.message === 'Not authorized' ? 'Not authorized, contact admin' : 'Wrong Username/Password');
+      setError(
+        err.message === 'Not authorized'
+          ? 'Nu ai drepturi de acces. Contactează administratorul.'
+          : 'Utilizator sau parolă incorectă.',
+      );
       setPassword('');
     } finally {
       setLoading(false);
@@ -88,26 +92,28 @@ export default function Login() {
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Username</label>
+            <label>Utilizator</label>
             <input
               className="form-input"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
               autoFocus
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>Parolă</label>
             <input
               className="form-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
             />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? 'Se autentifică…' : 'Autentificare'}
           </button>
         </form>
       </div>

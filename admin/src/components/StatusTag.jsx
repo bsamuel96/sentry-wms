@@ -21,5 +21,6 @@ const STATUS_MAP = {
 export default function StatusTag({ status }) {
   if (!status) return null;
   const cls = STATUS_MAP[status] || 'tag-gray';
-  return <span className={`tag ${cls}`}>{status}</span>;
+  return <span className={`tag ${cls}`}>{statusLabel(status)}</span>;
 }
+import { statusLabel } from '../i18n/ro.js';

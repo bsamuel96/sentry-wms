@@ -14,15 +14,15 @@ export default function Modal({ title, onClose, children, footer, size, onBack, 
               type="button"
               className="modal-back"
               onClick={onBack}
-              aria-label={backLabel ? `Back to ${backLabel}` : 'Back'}
-              title={backLabel ? `Back to ${backLabel}` : 'Back'}
+              aria-label={backLabel ? `Înapoi la ${t(backLabel)}` : 'Înapoi'}
+              title={backLabel ? `Înapoi la ${t(backLabel)}` : 'Înapoi'}
               data-testid="modal-back"
             >
               &#8592;
             </button>
           )}
-          <h2>{title}</h2>
-          <button className="modal-close" onClick={onClose}>&times;</button>
+          <h2>{t(title)}</h2>
+          <button className="modal-close" onClick={onClose} aria-label="Închide">&times;</button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
@@ -30,3 +30,4 @@ export default function Modal({ title, onClose, children, footer, size, onBack, 
     </div>
   );
 }
+import { t } from '../i18n/ro.js';
