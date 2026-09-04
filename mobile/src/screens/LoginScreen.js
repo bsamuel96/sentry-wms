@@ -145,7 +145,7 @@ export default function LoginScreen() {
               style={styles.input}
               value={connectUrl}
               onChangeText={(t) => { setConnectUrl(t); setConnectError(''); }}
-              placeholder="http://192.168.1.100:5000"
+              placeholder="https://sentry-wms-production.up.railway.app"
               placeholderTextColor={colors.textPlaceholder}
               autoCapitalize="none"
               autoCorrect={false}
@@ -213,7 +213,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <TouchableOpacity style={styles.serverInfo} onPress={openServerModal}>
-            <Text style={styles.version}>v1.9.0</Text>
+            <Text style={styles.version}>v1.37.1 Autosav</Text>
             {serverDisplay ? (
               <Text style={styles.serverUrlText} numberOfLines={1}>{serverDisplay}</Text>
             ) : null}
@@ -230,7 +230,7 @@ export default function LoginScreen() {
               style={styles.modalInput}
               value={serverUrl}
               onChangeText={(t) => { setServerUrlLocal(t); setModalError(''); }}
-              placeholder="http://10.1.10.150:5000"
+              placeholder="https://sentry-wms-production.up.railway.app"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"

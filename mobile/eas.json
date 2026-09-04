@@ -10,6 +10,9 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://sentry-wms-production.up.railway.app"
       }
     },
     "preview": {
@@ -18,12 +21,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://10.1.10.150:5000"
+        "EXPO_PUBLIC_API_URL": "https://sentry-wms-production.up.railway.app"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://sentry-wms-production.up.railway.app"
       }
     }
   },

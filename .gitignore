@@ -44,6 +44,7 @@ build/
 api/BUILD_VERSION
 
 # Expo / React Native
+mobile/.expo/
 mobile/.expo/web/
 mobile/android/
 mobile/ios/

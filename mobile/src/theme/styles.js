@@ -2,32 +2,34 @@ import { Platform, StyleSheet } from 'react-native';
 
 export const colors = {
   // Brand
-  accentRed: '#8e2716',
-  copper: '#b87333',
-  cream: '#fdf4e3',
+  // Legacy key names remain to avoid a screen-by-screen API migration.
+  // Their values are now the Autosav palette.
+  accentRed: '#0b63d6',
+  copper: '#2f7fe5',
+  cream: '#ffffff',
 
   // Surfaces
-  background: '#ffffff',
-  cardBg: '#f7f3ec',
-  cardBorder: '#e0d9cc',
-  inputBg: '#f7f3ec',
-  inputBorder: '#d6cfc0',
+  background: '#f4f6f8',
+  cardBg: '#ffffff',
+  cardBorder: '#d7e4f2',
+  inputBg: '#ffffff',
+  inputBorder: '#b9d4f3',
 
   // Text
-  textPrimary: '#1a1a1a',
-  textSecondary: '#7a7060',
-  textMuted: '#999080',
-  textPlaceholder: '#b0a898',
+  textPrimary: '#0f172a',
+  textSecondary: '#52647c',
+  textMuted: '#6b7d94',
+  textPlaceholder: '#91a1b6',
 
   // Status
-  success: '#34a853',
-  warning: '#b87333',
-  danger: '#8e2716',
+  success: '#16a34a',
+  warning: '#d97706',
+  danger: '#dc2626',
 
   // Utility
-  border: '#e0d9cc',
+  border: '#d7e4f2',
   overlay: 'rgba(0,0,0,0.4)',
-  grayAccent: '#a09b91',
+  grayAccent: '#64748b',
 };
 
 export const radii = {
@@ -266,7 +268,7 @@ export default StyleSheet.create({
     paddingVertical: 10,
   },
   scanInputDisabled: {
-    backgroundColor: '#f0ede6',
+    backgroundColor: '#eaf0f7',
     borderColor: colors.cardBorder,
   },
 

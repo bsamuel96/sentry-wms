@@ -129,6 +129,17 @@ export default function HomeScreen({ navigation }) {
   const handleScan = async (barcode) => {
     const cleaned = barcode.replace(/[\r\n\s]+/g, '').trim();
     if (!cleaned) return;
+
+    if (cleaned.toUpperCase().startsWith('ROW-')) {
+      const aisle = cleaned.slice(4) || '?';
+      setInfoModal({
+        visible: true,
+        title: `RÂND ${aisle}`,
+        message: 'Etichetă de rând recunoscută. Pentru o operațiune de stoc, scanează apoi eticheta bin-ului exact.',
+      });
+      return;
+    }
+
     const encoded = encodeURIComponent(cleaned);
 
     // Try item lookup (UPC or SKU)
@@ -262,7 +273,7 @@ export default function HomeScreen({ navigation }) {
               value={serverUrl}
               onChangeText={setServerUrl}
               onBlur={() => { if (serverUrl.trim()) setApiUrl(serverUrl.trim()); }}
-              placeholder="http://10.1.10.150:5000"
+              placeholder="https://sentry-wms-production.up.railway.app"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -444,7 +455,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.9.0 / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.37.1 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}
@@ -610,7 +621,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 13,
     fontWeight: '600',
-    color: colors.accentRed,
+    color: colors.danger,
     letterSpacing: 0.3,
   },
   content: {
@@ -755,7 +766,7 @@ const styles = StyleSheet.create({
   },
   scanModeBtnActive: {
     borderColor: colors.accentRed,
-    backgroundColor: '#fdf6f4',
+    backgroundColor: '#eaf3ff',
   },
   scanModeBtnText: {
     fontFamily: fonts.mono,

@@ -15,7 +15,7 @@ const {
 const fs = require("fs");
 const path = require("path");
 
-const PACKAGE = "com.hightowersystems.sentrywms";
+const PACKAGE = "ro.autosavcar.sentrywms";
 const PACKAGE_DIR = PACKAGE.replace(/\./g, "/");
 
 // ── Java source files ──────────────────────────────────────

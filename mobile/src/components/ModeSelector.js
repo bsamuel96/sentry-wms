@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     padding: 12, borderRadius: radii.badge, borderWidth: 1,
     borderColor: colors.cardBorder, marginBottom: 8,
   },
-  optionActive: { borderColor: colors.accentRed, backgroundColor: '#fdf6f4' },
+  optionActive: { borderColor: colors.accentRed, backgroundColor: '#eaf3ff' },
   optionLabel: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   optionLabelActive: { color: colors.accentRed },
   optionDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },

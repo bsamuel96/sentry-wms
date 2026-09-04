@@ -68,17 +68,18 @@ describe('ScanInput keyboard fallback (#104, #105)', () => {
     expect(match[0]).toMatch(/setSoftInput\(false\)/);
   });
 
-  it('handleSubmit resets softInput to false before the post-submit refocus', () => {
+  it('handleSubmit resets softInput and delegates to the shared scanner processor', () => {
     // The 50ms post-submit refocus would re-pop the keyboard if softInput
     // stayed true. Regression gate for #105.
     const match = source.match(/const\s+handleSubmit\s*=[\s\S]*?\n\s*\};/);
     expect(match).not.toBeNull();
     const body = match[0];
     const resetIdx = body.indexOf('setSoftInput(false)');
-    const refocusIdx = body.indexOf('inputRef.current?.focus()');
+    const processIdx = body.indexOf('processBarcode(bufferRef.current, true)');
     expect(resetIdx).toBeGreaterThan(-1);
-    expect(refocusIdx).toBeGreaterThan(-1);
-    expect(resetIdx).toBeLessThan(refocusIdx);
+    expect(processIdx).toBeGreaterThan(-1);
+    expect(resetIdx).toBeLessThan(processIdx);
+    expect(source).toMatch(/if \(refocusAfter\) setTimeout\(\(\) => inputRef\.current\?\.focus\(\), 50\)/);
   });
 });
 
@@ -88,5 +89,19 @@ describe('ScanInput copy/paste support (#104)', () => {
     // bug report (#70) called out paste not working; removing the flag is
     // the fix. Regression gate so it does not silently come back.
     expect(source).not.toMatch(/contextMenuHidden/);
+  });
+});
+
+describe('ScanInput phone camera support', () => {
+  it('renders the reusable camera scanner from every ScanInput', () => {
+    expect(source).toMatch(/import CameraScannerModal from '\.\/CameraScannerModal'/);
+    expect(source).toMatch(/<CameraScannerModal/);
+    expect(source).toMatch(/accessibilityLabel="Scanează cu camera"/);
+  });
+
+  it('routes camera values through the same barcode processor as hardware input', () => {
+    expect(source).toMatch(/const handleCameraScan = useCallback/);
+    expect(source).toMatch(/processBarcode\(barcode, true\)/);
+    expect(source).toMatch(/onScan=\{handleCameraScan\}/);
   });
 });

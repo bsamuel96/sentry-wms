@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   pickerOption: {
     padding: 14, borderRadius: radii.card, borderWidth: 1, borderColor: colors.cardBorder, marginBottom: 8,
   },
-  pickerOptionActive: { borderColor: colors.accentRed, backgroundColor: '#fdf6f4' },
+  pickerOptionActive: { borderColor: colors.accentRed, backgroundColor: '#eaf3ff' },
   pickerOptionText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   pickerOptionTextActive: { color: colors.accentRed },
   tapHint: { fontFamily: fonts.mono, fontSize: 10, color: colors.textPlaceholder, marginTop: 2 },

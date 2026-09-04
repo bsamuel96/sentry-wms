@@ -47,7 +47,7 @@ export async function getStoredApiUrl() {
 /** True if the user has explicitly saved a server URL. */
 export async function hasStoredApiUrl() {
   const stored = await AsyncStorage.getItem(API_URL_KEY).catch(() => null);
-  return stored !== null;
+  return stored !== null || Boolean(process.env.EXPO_PUBLIC_API_URL);
 }
 
 let logoutHandler = null;

@@ -1,7 +1,8 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import { colors, fonts, radii } from '../theme/styles';
 import { useScanSettingsContext } from '../context/ScanSettingsContext';
+import CameraScannerModal from './CameraScannerModal';
 
 export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabled = false, autoFocus = true, suppressRefocus = false }) {
   const inputRef = useRef(null);
@@ -12,24 +13,44 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
   // hidden during auto-focus and the 1-second refocus loop (hardware scan
   // flow), while still letting a tap open the keyboard for manual fallback.
   const [softInput, setSoftInput] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
   const scanSettings = useScanSettingsContext();
+  const scanMode = scanSettings?.mode;
+  const registerScanHandler = scanSettings?.registerScanHandler;
+  const unregisterScanHandler = scanSettings?.unregisterScanHandler;
+  const scanInFlightRef = useRef(false);
+
+  const processBarcode = useCallback((raw, refocusAfter = false) => {
+    const trimmed = String(raw || '').replace(/[\r\n\s]+/g, '').trim();
+
+    setValue('');
+    bufferRef.current = '';
+    setSoftInput(false);
+    if (!trimmed || !onScan || scanInFlightRef.current) {
+      if (refocusAfter) setTimeout(() => inputRef.current?.focus(), 50);
+      return Promise.resolve();
+    }
+
+    scanInFlightRef.current = true;
+    setProcessing(true);
+    return Promise.resolve(onScan(trimmed)).finally(() => {
+      scanInFlightRef.current = false;
+      setProcessing(false);
+      if (refocusAfter) setTimeout(() => inputRef.current?.focus(), 50);
+    });
+  }, [onScan]);
 
   // Register this ScanInput's onScan as the active intent handler
   // when the component is mounted and not disabled
   useEffect(() => {
-    if (!scanSettings || scanSettings.mode !== 'intent' || disabled) return;
+    if (scanMode !== 'intent' || !registerScanHandler || !unregisterScanHandler || disabled) return;
     const handler = (barcode) => {
       if (disabled || processing) return;
-      const trimmed = barcode.replace(/[\r\n\s]+/g, '').trim();
-      if (!trimmed || !onScan) return;
-      setProcessing(true);
-      Promise.resolve(onScan(trimmed)).finally(() => {
-        setProcessing(false);
-      });
+      processBarcode(barcode);
     };
-    scanSettings.registerScanHandler(handler);
-    return () => scanSettings.unregisterScanHandler(handler);
-  }, [scanSettings?.mode, onScan, disabled, processing]);
+    registerScanHandler(handler);
+    return () => unregisterScanHandler(handler);
+  }, [scanMode, registerScanHandler, unregisterScanHandler, disabled, processing, processBarcode]);
 
   useEffect(() => {
     if (autoFocus && !disabled && !processing && !suppressRefocus) {
@@ -54,31 +75,26 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
     return () => clearInterval(interval);
   }, [disabled, processing, suppressRefocus]);
 
-  const scanInFlightRef = useRef(false);
-
   const handleSubmit = () => {
     // Use bufferRef (synchronous) instead of value (async React state)
     // to avoid the C6000 race where Enter fires before the last onChangeText flushes
-    const raw = bufferRef.current;
-    const trimmed = raw.replace(/[\r\n\s]+/g, '').trim();
-
-    setValue('');
-    bufferRef.current = '';
     // Drop out of manual-entry mode so the post-submit refocus stays silent.
     setSoftInput(false);
-    if (!trimmed || !onScan || scanInFlightRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      return;
-    }
-
-    scanInFlightRef.current = true;
-    setProcessing(true);
-    Promise.resolve(onScan(trimmed)).finally(() => {
-      scanInFlightRef.current = false;
-      setProcessing(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    });
+    processBarcode(bufferRef.current, true);
   };
+
+  const handleCameraScan = useCallback((barcode) => {
+    processBarcode(barcode, true);
+  }, [processBarcode]);
+
+  const openCamera = useCallback(() => {
+    inputRef.current?.blur();
+    setCameraVisible(true);
+  }, []);
+
+  const closeCamera = useCallback(() => {
+    setCameraVisible(false);
+  }, []);
 
   const handlePressIn = () => {
     if (softInput) return;
@@ -108,33 +124,51 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
     'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Tab'];
 
   return (
-    <View style={[styles.container, (disabled || processing) && styles.disabled]}>
-      <TextInput
-        ref={inputRef}
-        style={styles.input}
-        placeholder={processing ? 'PROCESSING...' : placeholder}
-        placeholderTextColor={colors.textPlaceholder}
-        value={value}
-        onChangeText={handleChangeText}
-        onSubmitEditing={handleSubmit}
-        onKeyPress={(e) => {
-          if (IGNORED_KEYS.includes(e.nativeEvent.key)) {
-            e.preventDefault?.();
-            e.stopPropagation?.();
-          }
-        }}
-        onPressIn={handlePressIn}
-        onBlur={handleBlur}
-        editable={!disabled && !processing}
-        autoFocus={autoFocus && !disabled}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        blurOnSubmit={false}
-        returnKeyType="done"
-        showSoftInputOnFocus={softInput}
-        selectTextOnFocus
+    <>
+      <View style={[styles.container, (disabled || processing) && styles.disabled]}>
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          placeholder={processing ? 'SE PROCESEAZĂ...' : placeholder}
+          placeholderTextColor={colors.textPlaceholder}
+          value={value}
+          onChangeText={handleChangeText}
+          onSubmitEditing={handleSubmit}
+          onKeyPress={(e) => {
+            if (IGNORED_KEYS.includes(e.nativeEvent.key)) {
+              e.preventDefault?.();
+              e.stopPropagation?.();
+            }
+          }}
+          onPressIn={handlePressIn}
+          onBlur={handleBlur}
+          editable={!disabled && !processing}
+          autoFocus={autoFocus && !disabled}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          blurOnSubmit={false}
+          returnKeyType="done"
+          showSoftInputOnFocus={softInput}
+          selectTextOnFocus
+        />
+        <TouchableOpacity
+          style={styles.cameraButton}
+          onPress={openCamera}
+          disabled={disabled || processing}
+          accessibilityRole="button"
+          accessibilityLabel="Scanează cu camera"
+          accessibilityHint="Deschide camera telefonului pentru citirea codului de bare"
+        >
+          <Text style={styles.cameraIcon}>▣</Text>
+          <Text style={styles.cameraLabel}>CAMERĂ</Text>
+        </TouchableOpacity>
+      </View>
+      <CameraScannerModal
+        visible={cameraVisible}
+        onClose={closeCamera}
+        onScan={handleCameraScan}
       />
-    </View>
+    </>
   );
 }
 
@@ -151,7 +185,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   disabled: {
-    backgroundColor: '#f0ede6',
+    backgroundColor: '#eaf0f7',
     borderColor: colors.cardBorder,
   },
   input: {
@@ -161,5 +195,24 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: 1,
     paddingVertical: 10,
+  },
+  cameraButton: {
+    minWidth: 82,
+    minHeight: 44,
+    marginRight: -8,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.inputBorder,
+  },
+  cameraIcon: { fontSize: 18, color: colors.accentRed },
+  cameraLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.accentRed,
   },
 });

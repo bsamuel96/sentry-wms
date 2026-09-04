@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sentry WMS",
     "slug": "sentry-wms",
-    "version": "1.36.0",
+    "version": "1.37.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,33 +14,34 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hightowersystems.sentrywms"
+      "bundleIdentifier": "ro.autosavcar.sentrywms"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0b63d6"
       },
-      "package": "com.hightowersystems.sentrywms",
-      "versionCode": 13,
-      "usesCleartextTraffic": true,
+      "package": "ro.autosavcar.sentrywms",
+      "versionCode": 14,
       "permissions": [
         "INTERNET",
-        "VIBRATE"
+        "VIBRATE",
+        "CAMERA"
       ]
     },
     "plugins": [
       "expo-asset",
       "expo-secure-store",
       "expo-splash-screen",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permite aplicației Sentry WMS să folosească camera pentru scanarea etichetelor.",
+          "recordAudioAndroid": false
+        }
+      ],
       "./plugins/chainway-scanner",
       "./plugins/with-cleartext-traffic"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "8df87216-03e6-4715-acbc-33f9fd23582d"
-      }
-    },
-    "owner": "mhightower932"
+    ]
   }
 }
