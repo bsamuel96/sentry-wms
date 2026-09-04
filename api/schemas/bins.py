@@ -14,11 +14,22 @@ class CreateBinRequest(BaseModel):
     bin_barcode: str = Field(..., min_length=1, max_length=128)
     bin_type: str = Field(..., min_length=1, max_length=32)
     aisle: Optional[str] = Field(None, max_length=32)
-    row_num: Optional[int] = Field(None, ge=0)
-    level_num: Optional[int] = Field(None, ge=0)
-    position_num: Optional[int] = Field(None, ge=0)
+    # PostgreSQL stores these physical coordinates as VARCHAR(10). Some
+    # warehouses use letters (for example Autosav rows a-f), so validating
+    # them as integers rejected values the database was explicitly designed
+    # to retain.
+    row_num: Optional[str] = Field(None, max_length=10)
+    level_num: Optional[str] = Field(None, max_length=10)
+    position_num: Optional[str] = Field(None, max_length=10)
     pick_sequence: int = Field(0, ge=0)
     putaway_sequence: int = Field(0, ge=0)
+
+    @field_validator("row_num", "level_num", "position_num", mode="before")
+    @classmethod
+    def normalize_coordinates(cls, value):
+        if value is None or value == "":
+            return None
+        return str(value).strip()
 
     @field_validator("bin_type")
     @classmethod
@@ -33,13 +44,20 @@ class UpdateBinRequest(BaseModel):
     bin_barcode: Optional[str] = Field(None, max_length=128)
     bin_type: Optional[str] = Field(None, min_length=1, max_length=32)
     aisle: Optional[str] = Field(None, max_length=32)
-    row_num: Optional[int] = Field(None, ge=0)
-    level_num: Optional[int] = Field(None, ge=0)
-    position_num: Optional[int] = Field(None, ge=0)
+    row_num: Optional[str] = Field(None, max_length=10)
+    level_num: Optional[str] = Field(None, max_length=10)
+    position_num: Optional[str] = Field(None, max_length=10)
     pick_sequence: Optional[int] = Field(None, ge=0)
     putaway_sequence: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
     zone_id: Optional[int] = Field(None, gt=0)
+
+    @field_validator("row_num", "level_num", "position_num", mode="before")
+    @classmethod
+    def normalize_coordinates(cls, value):
+        if value is None or value == "":
+            return None
+        return str(value).strip()
 
     @field_validator("bin_type")
     @classmethod

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useWarehouse } from '../warehouse.jsx';
 import { api } from '../api.js';
+import usePwaInstall from '../hooks/usePwaInstall.js';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -30,7 +31,7 @@ function resultRoute(r) {
   }
 }
 
-export default function TopBar({ forced = false }) {
+export default function TopBar({ forced = false, mobileNavOpen = false, onMenuToggle }) {
   const { user, logout } = useAuth();
   const { warehouses, warehouseId, warehouse, setWarehouseId } = useWarehouse();
   const navigate = useNavigate();
@@ -42,6 +43,7 @@ export default function TopBar({ forced = false }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchHighlight, setSearchHighlight] = useState(-1);
   const [serverVersion, setServerVersion] = useState(null);
+  const { canInstall, install, online } = usePwaInstall();
   const menuRef = useRef(null);
   const whRef = useRef(null);
   const searchRef = useRef(null);
@@ -60,7 +62,7 @@ export default function TopBar({ forced = false }) {
           const data = await res.json();
           setServerVersion(data?.version || null);
         }
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
   }, [forced, user]);
@@ -149,17 +151,29 @@ export default function TopBar({ forced = false }) {
 
   return (
     <div className="topbar">
+      {!forced && (
+        <button
+          type="button"
+          className="topbar-menu-button"
+          aria-label={mobileNavOpen ? 'Închide meniul' : 'Deschide meniul'}
+          aria-expanded={mobileNavOpen}
+          aria-controls="admin-navigation"
+          onClick={onMenuToggle}
+        >
+          <span aria-hidden>☰</span>
+        </button>
+      )}
       <div className="topbar-logo">
         <svg width="28" height="28" viewBox="0 0 32 32">
-          <rect x="1" y="1" width="30" height="30" rx="5" fill="#8e2715"/>
-          <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-          <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-          <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+          <rect x="1" y="1" width="30" height="30" rx="5" fill="#0b63d6"/>
+          <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FFFFFF" strokeWidth="1.6"/>
+          <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FFFFFF" strokeWidth="1.6"/>
+          <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+          <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+          <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+          <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+          <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+          <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
         </svg>
         Sentry WMS
         {serverVersion && (
@@ -179,15 +193,18 @@ export default function TopBar({ forced = false }) {
         )}
       </div>
       {!forced && <div className="topbar-breadcrumb" ref={whRef} style={{ position: 'relative' }}>
-        <span
+        <button
+          type="button"
           className="topbar-wh-picker"
           onClick={() => setShowWhPicker(!showWhPicker)}
+          aria-expanded={showWhPicker}
+          aria-label="Selectează depozitul"
         >
           <span>/</span> {whCode}
           <svg width="10" height="10" viewBox="0 0 10 10" style={{ marginLeft: 4, opacity: 0.5 }}>
             <path d="M2 4 L5 7 L8 4" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
           </svg>
-        </span>
+        </button>
         {showWhPicker && warehouses.length > 0 && (
           <div className="topbar-wh-dropdown">
             {warehouses.map((w) => {
@@ -219,12 +236,12 @@ export default function TopBar({ forced = false }) {
         {searchOpen && searchQuery.trim().length >= 2 && (
           <div className="topbar-wh-dropdown" style={{ minWidth: 320, maxHeight: 360, overflowY: 'auto' }}>
             {searchLoading && (
-              <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
+              <div className="topbar-wh-option" style={{ color: 'var(--text-tertiary)', cursor: 'default' }}>
                 Se caută…
               </div>
             )}
             {!searchLoading && searchResults.length === 0 && (
-              <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
+              <div className="topbar-wh-option" style={{ color: 'var(--text-tertiary)', cursor: 'default' }}>
                 Nicio potrivire
               </div>
             )}
@@ -247,16 +264,33 @@ export default function TopBar({ forced = false }) {
         )}
       </div>}
       <div className="topbar-user" ref={menuRef} style={{ position: 'relative' }}>
-        <div className="topbar-avatar" onClick={() => setShowMenu(!showMenu)} title={user?.full_name || user?.username}>
+        {!online && (
+          <span className="offline-indicator" role="status" title="Operațiunile WMS necesită conexiune la internet">
+            Offline · operațiunile necesită internet
+          </span>
+        )}
+        <button
+          type="button"
+          className="topbar-avatar"
+          onClick={() => setShowMenu(!showMenu)}
+          title={user?.full_name || user?.username}
+          aria-label="Meniu utilizator"
+          aria-expanded={showMenu}
+        >
           {initials}
-        </div>
+        </button>
         {showMenu && (
           <div className="topbar-dropdown">
             <div className="topbar-dropdown-header">
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#fdf4e3' }}>{user?.full_name || user?.username}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{user?.role}</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{user?.full_name || user?.username}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{user?.role}</div>
             </div>
             <div className="topbar-dropdown-divider" />
+            {canInstall && (
+              <button className="topbar-dropdown-item" onClick={install}>
+                Instalează aplicația
+              </button>
+            )}
             <button className="topbar-dropdown-item" onClick={logout}>
               Deconectare
             </button>

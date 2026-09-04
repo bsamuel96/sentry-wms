@@ -159,7 +159,7 @@ export default function POSActivity() {
             <div className="pos-panel-title">Today's revenue mix</div>
             <div className="pos-panel-note">how the money came in</div>
             <SplitBar title="Channel" segs={[
-              { label: 'Counter', cents: t.counter_cents || 0, color: '#c4722a' },
+              { label: 'Counter', cents: t.counter_cents || 0, color: '#2176df' },
               { label: 'Phone', cents: t.phone_cents || 0, color: '#1e5f8a' },
             ]} />
             <SplitBar title="Tender" segs={tenderSegs(summary?.tenders)} />
@@ -188,7 +188,7 @@ export default function POSActivity() {
 }
 
 function tenderSegs(tenders) {
-  const colors = { card: '#8e2715', cash: '#2d7a3a', split: '#c4722a', unknown: '#a89a88' };
+  const colors = { card: '#0b63d6', cash: '#2d7a3a', split: '#2176df', unknown: '#8292a8' };
   return (tenders || []).map((x) => ({
     label: x.method ? x.method[0].toUpperCase() + x.method.slice(1) : 'Other',
     cents: x.cents, color: colors[x.method] || '#8a6d1b',
@@ -285,8 +285,8 @@ function PaceCurve({ pace, currentHour }) {
       <svg className="pos-chart" viewBox={`0 0 ${PW} ${PH}`} role="img" aria-label="Cumulative revenue, today vs yesterday">
         <defs>
           <linearGradient id="paceFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c4722a" stopOpacity="0.34" />
-            <stop offset="100%" stopColor="#c4722a" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#2176df" stopOpacity="0.34" />
+            <stop offset="100%" stopColor="#2176df" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         {grid.map((g) => {
@@ -306,9 +306,9 @@ function PaceCurve({ pace, currentHour }) {
         })}
 
         {area && <path d={area} fill="url(#paceFill)" />}
-        <path d={line(yestPts)} fill="none" stroke="#a89a88" strokeWidth="2" strokeDasharray="3 4" />
-        <path d={line(todayPts)} fill="none" stroke="#8e2715" strokeWidth="2.5" />
-        {todayPts.length > 0 && <circle cx={sx(nowH)} cy={sy(td[nowH])} r="4.5" fill="#8e2715" stroke="#fff" strokeWidth="2" />}
+        <path d={line(yestPts)} fill="none" stroke="#8292a8" strokeWidth="2" strokeDasharray="3 4" />
+        <path d={line(todayPts)} fill="none" stroke="#0b63d6" strokeWidth="2.5" />
+        {todayPts.length > 0 && <circle cx={sx(nowH)} cy={sy(td[nowH])} r="4.5" fill="#0b63d6" stroke="#fff" strokeWidth="2" />}
 
         {/* hover hit-areas per hour */}
         {[...Array(hi - lo + 1)].map((_, i) => {
@@ -372,7 +372,7 @@ function WeekBars({ week }) {
                 onMouseLeave={() => setHover(null)} />
               {!cur.is_future && (
                 <rect x={cx + 2} y={yb(cur.net_cents)} width={bw} height={Math.max(cur.net_cents > 0 ? 2 : 0, WP.t + plotH - yb(cur.net_cents))}
-                  rx="2" className={`pos-bar${cur.is_today ? ' is-active' : ''}`} fill={cur.is_today ? '#8e2715' : '#c4722a'}
+                  rx="2" className={`pos-bar${cur.is_today ? ' is-active' : ''}`} fill={cur.is_today ? '#0b63d6' : '#2176df'}
                   onMouseEnter={() => setHover({ d, which: cur.is_today ? 'today' : 'this week', cents: cur.net_cents, x: cx, y: yb(cur.net_cents) })}
                   onMouseLeave={() => setHover(null)} />
               )}

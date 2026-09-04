@@ -166,10 +166,10 @@ export default function Inventory() {
           onBlur={commitSearch}
           style={{ minWidth: 280, flex: 1 }}
         />
-        {loading && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Loading…</span>}
+        {loading && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Loading…</span>}
       </div>
       {!warehouseFilter && (
-        <div style={{ padding: 24, color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+        <div style={{ padding: 24, color: 'var(--text-secondary)', fontSize: 13 }}>
           Select a warehouse to view inventory.
         </div>
       )}

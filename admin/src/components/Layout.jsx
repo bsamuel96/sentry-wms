@@ -9,6 +9,7 @@ const PERM_POPUP_COOLDOWN_MS = 5000;
 
 export default function Layout() {
   const { user } = useAuth();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Page permissions (mig 061): catch global permission-denied events from
   // api.js and surface a "Permissions Error" modal. Lives on Layout so
   // it covers every page reached through the admin shell.
@@ -41,14 +42,42 @@ export default function Layout() {
     setPermError(null);
   }
 
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [mobileNavOpen]);
+
   // When the user is stuck in a forced-change flow the only available
   // actions are the change-password form and logout, so drop the sidebar
   // entirely and widen the main column.
   const forced = !!user?.must_change_password;
   return (
     <div className={`app-layout${forced ? ' forced-change' : ''}`}>
-      <TopBar forced={forced} />
-      {!forced && <Sidebar />}
+      <TopBar
+        forced={forced}
+        mobileNavOpen={mobileNavOpen}
+        onMenuToggle={() => setMobileNavOpen((open) => !open)}
+      />
+      {!forced && (
+        <>
+          <Sidebar mobileOpen={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
+          <button
+            type="button"
+            className={`sidebar-backdrop${mobileNavOpen ? ' visible' : ''}`}
+            aria-label="Închide meniul"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        </>
+      )}
       <main className="content">
         <Outlet />
       </main>

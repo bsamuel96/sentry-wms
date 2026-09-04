@@ -28,12 +28,12 @@ class ErrorBoundary extends React.Component {
         <div style={{
           padding: '2rem',
           textAlign: 'center',
-          background: '#f7f3ec',
-          border: '1px solid #e0d9cc',
+          background: '#f4f6f8',
+          border: '1px solid #d7e4f2',
           borderRadius: '8px',
           margin: '1rem'
         }}>
-          <h2 style={{ color: '#8e2716' }}>A apărut o problemă</h2>
+          <h2 style={{ color: '#c62828' }}>A apărut o problemă</h2>
           <p style={{ color: '#666' }}>
             {this.props.fallbackMessage
               ? t(this.props.fallbackMessage)
@@ -42,7 +42,7 @@ class ErrorBoundary extends React.Component {
           <button
             onClick={this.reset}
             style={{
-              background: '#8e2716',
+              background: '#0b63d6',
               color: 'white',
               border: 'none',
               padding: '0.5rem 1rem',

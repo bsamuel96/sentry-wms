@@ -101,4 +101,29 @@ describe('Bin create Zone dropdown (issue #99)', () => {
     expect(typeof body.zone_id).toBe('number');
     expect(body.zone_id).toBe(3);
   });
+
+  it('submits alphabetic shelf coordinates and the column value', async () => {
+    const { findByText, getByRole, getAllByRole, getByLabelText } = render(
+      <MemoryRouter>
+        <Bins />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalled());
+    fireEvent.click(await findByText('New Bin'));
+    const textboxes = getAllByRole('textbox');
+    fireEvent.change(textboxes[0], { target: { value: 'A-a-1' } });
+    fireEvent.change(textboxes[1], { target: { value: 'A-a-1' } });
+    const selects = getAllByRole('combobox');
+    fireEvent.change(selects[0], { target: { value: 'Pickable' } });
+    fireEvent.change(selects[1], { target: { value: '2' } });
+    fireEvent.change(getByLabelText('Rând'), { target: { value: 'A' } });
+    fireEvent.change(getByLabelText('Raft'), { target: { value: 'a' } });
+    fireEvent.change(getByLabelText('Coloană'), { target: { value: '1' } });
+    fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(apiPostMock).toHaveBeenCalled());
+    const body = apiPostMock.mock.calls[0][1];
+    expect(body).toMatchObject({ aisle: 'A', row_num: 'a', position_num: '1' });
+  });
 });

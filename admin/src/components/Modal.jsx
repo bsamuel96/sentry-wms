@@ -1,3 +1,6 @@
+import { useEffect, useId, useRef } from 'react';
+import { t } from '../i18n/ro.js';
+
 // onBack is optional. When supplied, a back arrow renders in the header's
 // top-left and the title shifts right to make room. Used by the SO modal's
 // Related Records tab, where clicking a related record swaps the modal's
@@ -5,9 +8,38 @@
 // started. Omitting it renders exactly what every other caller renders.
 export default function Modal({ title, onClose, children, footer, size, onBack, backLabel }) {
   const className = size ? `modal modal-${size}` : 'modal';
+  const titleId = useId();
+  const modalRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement;
+    modalRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onCloseRef.current();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={className} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={modalRef}
+        className={className}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex="-1"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           {onBack && (
             <button
@@ -21,7 +53,7 @@ export default function Modal({ title, onClose, children, footer, size, onBack, 
               &#8592;
             </button>
           )}
-          <h2>{t(title)}</h2>
+          <h2 id={titleId}>{t(title)}</h2>
           <button className="modal-close" onClick={onClose} aria-label="Închide">&times;</button>
         </div>
         <div className="modal-body">{children}</div>
@@ -30,4 +62,3 @@ export default function Modal({ title, onClose, children, footer, size, onBack, 
     </div>
   );
 }
-import { t } from '../i18n/ro.js';

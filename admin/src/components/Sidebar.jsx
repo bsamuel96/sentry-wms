@@ -1,7 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
-import { useAuth } from '../auth.jsx';
 import { useWarehouse } from '../warehouse.jsx';
 import { t } from '../i18n/ro.js';
 
@@ -84,9 +83,8 @@ const NAV = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onNavigate }) {
   const location = useLocation();
-  const { user } = useAuth();
   const { warehouseId } = useWarehouse();
   const [counts, setCounts] = useState({});
   // The POS Activity tab is opt-in via the pos_activity_enabled setting
@@ -165,7 +163,7 @@ export default function Sidebar() {
   }
 
   return (
-    <nav className="sidebar">
+    <nav id="admin-navigation" className={`sidebar${mobileOpen ? ' mobile-open' : ''}`} aria-label="Navigare principală">
       {navGroups.map((group) => {
         const isCollapsed = !!collapsed[group.label];
         return (
@@ -203,6 +201,7 @@ export default function Sidebar() {
                 className={({ isActive }) =>
                   `sidebar-link${isActive ? ' active' : ''}`
                 }
+                onClick={onNavigate}
               >
                 <span>{t(item.label)}</span>
                 {counts[item.to] > 0 && (

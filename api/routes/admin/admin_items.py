@@ -565,14 +565,22 @@ def _import_item(db, row: ItemImportRow):
 
 def _import_bin(db, row: BinImportRow, raw_rec: dict):
     bin_code = row.bin_code
+    warehouse_id = row.warehouse_id
 
     # Resolve zone by name or code if zone_id not provided
     zone_id = row.zone_id
     zone_value = (row.zone or "").strip()
     if not zone_id and zone_value:
         zone_row = db.execute(
-            text("SELECT zone_id FROM zones WHERE LOWER(zone_code) = LOWER(:z) OR LOWER(zone_name) = LOWER(:z) LIMIT 1"),
-            {"z": zone_value},
+            text("""
+                SELECT zone_id
+                FROM zones
+                WHERE (LOWER(zone_code) = LOWER(:z) OR LOWER(zone_name) = LOWER(:z))
+                  AND (:wid IS NULL OR warehouse_id = :wid)
+                ORDER BY zone_id
+                LIMIT 1
+            """),
+            {"z": zone_value, "wid": warehouse_id},
         ).fetchone()
         if zone_row:
             zone_id = zone_row.zone_id
@@ -581,10 +589,24 @@ def _import_bin(db, row: BinImportRow, raw_rec: dict):
             raise _SkipRow(f"Zone '{zone_value}' not found. Create the zone first, then import bins.")
         raise _SkipRow("Missing required field: zone (or zone_id)")
 
-    warehouse_id = row.warehouse_id
-    if not warehouse_id:
-        wh_row = db.execute(text("SELECT warehouse_id FROM zones WHERE zone_id = :zid"), {"zid": zone_id}).fetchone()
-        warehouse_id = wh_row.warehouse_id if wh_row else 1
+    zone_record = db.execute(
+        text("SELECT warehouse_id FROM zones WHERE zone_id = :zid"),
+        {"zid": zone_id},
+    ).fetchone()
+    if not zone_record:
+        raise _SkipRow(f"Zone id {zone_id} not found")
+    if warehouse_id and warehouse_id != zone_record.warehouse_id:
+        raise _SkipRow(
+            f"Zone id {zone_id} belongs to warehouse {zone_record.warehouse_id}, not warehouse {warehouse_id}"
+        )
+    warehouse_id = warehouse_id or zone_record.warehouse_id
+
+    warehouse_exists = db.execute(
+        text("SELECT 1 FROM warehouses WHERE warehouse_id = :wid"),
+        {"wid": warehouse_id},
+    ).fetchone()
+    if not warehouse_exists:
+        raise _SkipRow(f"Warehouse id {warehouse_id} not found")
 
     bin_type = row.bin_type or "Pickable"
     bin_barcode = row.bin_barcode or bin_code
@@ -598,13 +620,14 @@ def _import_bin(db, row: BinImportRow, raw_rec: dict):
 
     db.execute(
         text("""
-            INSERT INTO bins (zone_id, warehouse_id, bin_code, bin_barcode, bin_type, aisle, row_num, level_num, pick_sequence, putaway_sequence, description, external_id)
-            VALUES (:zid, :wid, :code, :barcode, :type, :aisle, :row, :level, :pick_seq, :put_seq, :desc, :ext_id)
+            INSERT INTO bins (zone_id, warehouse_id, bin_code, bin_barcode, bin_type, aisle, row_num, level_num, position_num, pick_sequence, putaway_sequence, description, external_id)
+            VALUES (:zid, :wid, :code, :barcode, :type, :aisle, :row, :level, :position, :pick_seq, :put_seq, :desc, :ext_id)
         """),
         {
             "zid": zone_id, "wid": warehouse_id, "code": bin_code,
             "barcode": bin_barcode, "type": bin_type,
             "aisle": row.aisle, "row": row.row_num, "level": row.level_num,
+            "position": row.position_num,
             "pick_seq": row.pick_sequence or 0, "put_seq": row.putaway_sequence or 0,
             "desc": row.description,
             "ext_id": str(uuid.uuid4()),

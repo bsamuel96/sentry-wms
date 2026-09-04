@@ -24,10 +24,10 @@ PO-1002,1,Global Parts Inc,GADGET-001,200,2026-05-15`,
 SO-5001,1,John Smith,555-0101,123 Main St,WIDGET-001,2
 SO-5001,1,John Smith,555-0101,123 Main St,GADGET-001,1
 SO-5002,1,Jane Doe,555-0102,456 Oak Ave,WIDGET-002,3`,
-  bins: `bin_code,bin_barcode,zone,warehouse_id,aisle,bin_type,pick_sequence,putaway_sequence,description
-C-01-01-01,C-01-01-01,STORAGE,1,C,Pickable,100,100,Shelf C Row 1 Level 1
-C-01-02-01,C-01-02-01,STORAGE,1,C,Pickable,101,101,Shelf C Row 2 Level 1
-D-01-01-01,D-01-01-01,PICKING,1,D,Pickable,200,200,Pick zone D`,
+  bins: `bin_code,bin_barcode,zone,warehouse_id,aisle,row_num,level_num,position_num,bin_type,pick_sequence,putaway_sequence,description
+C-a-1,C-a-1,PICK,1,C,a,,1,Pickable,100,100,Culoar C raft a coloana 1
+C-a-2,C-a-2,PICK,1,C,a,,2,Pickable,101,101,Culoar C raft a coloana 2
+D-b-1,D-b-1,PICK,1,D,b,,1,Pickable,200,200,Culoar D raft b coloana 1`,
   'inventory-adjustments': `sku,warehouse,bin,qty,memo
 WIDGET-001,WH-01,PICK-01,5,Found stock during cycle count
 WIDGET-002,WH-01,PICK-02,-3,Damaged in handling
@@ -91,7 +91,7 @@ export default function Imports() {
         const data = await res?.json();
         setImportResult({ error: data?.error || 'Import failed' });
       }
-    } catch (err) {
+    } catch {
       setImportResult({ error: 'Failed to parse file' });
     }
     setImporting(false);

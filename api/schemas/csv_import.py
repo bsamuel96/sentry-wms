@@ -97,14 +97,16 @@ class BinImportRow(_BaseImportRow):
     warehouse_id: Optional[int] = Field(None, gt=0)
     bin_type: Optional[str] = Field(None, max_length=32)
     aisle: Optional[str] = Field(None, max_length=32)
-    row_num: Optional[int] = Field(None, ge=0)
-    level_num: Optional[int] = Field(None, ge=0)
+    row_num: Optional[str] = Field(None, max_length=10)
+    level_num: Optional[str] = Field(None, max_length=10)
+    position_num: Optional[str] = Field(None, max_length=10)
     pick_sequence: Optional[int] = Field(None, ge=0)
     putaway_sequence: Optional[int] = Field(None, ge=0)
     description: Optional[str] = Field(None, max_length=200)
 
     @field_validator(
-        "bin_code", "bin_barcode", "zone", "bin_type", "aisle", "description",
+        "bin_code", "bin_barcode", "zone", "bin_type", "aisle", "row_num",
+        "level_num", "position_num", "description",
         mode="before",
     )
     @classmethod

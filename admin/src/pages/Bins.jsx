@@ -41,8 +41,7 @@ export default function Bins() {
   // Walks all pages and downloads the full result set as CSV. Sentry's
   // admin/bins endpoint caps page_size at 50 regardless of `per_page`,
   // so we paginate server-side and concat client-side. CSV mirrors the
-  // BinImportRow schema (bin_code, bin_barcode, zone, warehouse_id,
-  // bin_type, aisle, pick_sequence, putaway_sequence, description) so
+  // BinImportRow schema (including the complete physical coordinates) so
   // an exported file is round-trip-importable via /admin/import/bins.
   async function exportCsv() {
     setExporting(true);
@@ -60,7 +59,7 @@ export default function Bins() {
         if (p >= (data.pages || 1)) break;
         p += 1;
       }
-      const headers = ['bin_code','bin_barcode','zone','warehouse_id','bin_type','aisle','pick_sequence','putaway_sequence','description'];
+      const headers = ['bin_code','bin_barcode','zone','warehouse_id','aisle','row_num','level_num','position_num','bin_type','pick_sequence','putaway_sequence','description'];
       const csvEscape = (v) => {
         if (v == null) return '';
         const s = String(v);
@@ -73,8 +72,11 @@ export default function Bins() {
           csvEscape(b.bin_barcode),
           csvEscape(b.zone_name || b.zone || ''),
           csvEscape(b.warehouse_id ?? warehouseId),
-          csvEscape(b.bin_type),
           csvEscape(b.aisle ?? ''),
+          csvEscape(b.row_num ?? ''),
+          csvEscape(b.level_num ?? ''),
+          csvEscape(b.position_num ?? ''),
+          csvEscape(b.bin_type),
           csvEscape(b.pick_sequence ?? ''),
           csvEscape(b.putaway_sequence ?? ''),
           csvEscape(b.description ?? ''),
@@ -146,7 +148,11 @@ export default function Bins() {
       bin_type: form.bin_type,
       zone_id: form.zone_id ? Number(form.zone_id) : null,
       aisle: form.aisle || null,
+      row_num: form.row_num || null,
+      level_num: form.level_num || null,
+      position_num: form.position_num || null,
       pick_sequence: form.pick_sequence !== '' && form.pick_sequence != null ? Number(form.pick_sequence) : 0,
+      putaway_sequence: form.putaway_sequence !== '' && form.putaway_sequence != null ? Number(form.putaway_sequence) : 0,
     };
     const res = editing
       ? await api.put(`/admin/bins/${selected.bin_id}`, { ...body, is_active: !!form.is_active })
@@ -165,7 +171,9 @@ export default function Bins() {
     { key: 'bin_barcode', label: 'Barcode', mono: true },
     { key: 'bin_type', label: 'Type' },
     { key: 'zone_name', label: 'Zone' },
-    { key: 'aisle', label: 'Aisle' },
+    { key: 'aisle', label: 'Rând' },
+    { key: 'row_num', label: 'Raft' },
+    { key: 'position_num', label: 'Coloană' },
     { key: 'pick_sequence', label: 'Pick Seq' },
     { key: 'is_active', label: 'Active', render: (r) => r.is_active ? 'Yes' : 'No' },
     { key: 'actions', label: '', render: (r) => (
@@ -215,12 +223,32 @@ export default function Bins() {
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Aisle</label>
-            <input className="form-input" value={form.aisle || ''} onChange={(e) => setForm({ ...form, aisle: e.target.value })} />
+            <label>Rând</label>
+            <input aria-label="Rând" className="form-input" value={form.aisle || ''} onChange={(e) => setForm({ ...form, aisle: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Pick Sequence</label>
-            <input className="form-input" type="number" value={form.pick_sequence ?? ''} onChange={(e) => setForm({ ...form, pick_sequence: e.target.value })} />
+            <label>Raft</label>
+            <input aria-label="Raft" className="form-input" value={form.row_num || ''} onChange={(e) => setForm({ ...form, row_num: e.target.value })} />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Coloană</label>
+            <input aria-label="Coloană" className="form-input" value={form.position_num || ''} onChange={(e) => setForm({ ...form, position_num: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label>Nivel</label>
+            <input aria-label="Nivel" className="form-input" value={form.level_num || ''} onChange={(e) => setForm({ ...form, level_num: e.target.value })} />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Ordine colectare</label>
+            <input className="form-input" type="number" min="0" value={form.pick_sequence ?? ''} onChange={(e) => setForm({ ...form, pick_sequence: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label>Ordine depozitare</label>
+            <input className="form-input" type="number" min="0" value={form.putaway_sequence ?? ''} onChange={(e) => setForm({ ...form, putaway_sequence: e.target.value })} />
           </div>
         </div>
       </>
@@ -261,7 +289,10 @@ export default function Bins() {
             <span className="detail-label">Barcode</span><span className="mono">{detail.bin_barcode}</span>
             <span className="detail-label">Type</span><span>{detail.bin_type}</span>
             <span className="detail-label">Zone</span><span>{detail.zone_name || '-'}</span>
-            <span className="detail-label">Aisle</span><span>{detail.aisle || '-'}</span>
+            <span className="detail-label">Rând</span><span>{detail.aisle || '-'}</span>
+            <span className="detail-label">Raft</span><span>{detail.row_num || '-'}</span>
+            <span className="detail-label">Coloană</span><span>{detail.position_num || '-'}</span>
+            <span className="detail-label">Nivel</span><span>{detail.level_num || '-'}</span>
             <span className="detail-label">Pick Seq</span><span>{detail.pick_sequence ?? '-'}</span>
             <span className="detail-label">Active</span><span>{detail.is_active ? 'Yes' : 'No'}</span>
           </div>

@@ -66,8 +66,8 @@ export default function ChangePassword() {
           role="alert"
           className="forced-change-banner"
           style={{
-            background: '#8e2716',
-            color: '#fdf4e3',
+            background: '#0b63d6',
+            color: '#ffffff',
             padding: '14px 18px',
             borderRadius: 6,
             marginBottom: 20,

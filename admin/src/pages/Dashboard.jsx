@@ -15,8 +15,8 @@ import SalesOrderModal from '../components/SalesOrderModal.jsx';
 // SalesOrders.jsx + TransferOrders.jsx; the single-file layout was
 // kept for codebase uniformity.
 
-const COLOR_TOP = '#8e2715';   // Sentry red (top performer per card)
-const COLOR_OTHER = '#c4722a'; // Copper (every other user)
+const COLOR_TOP = '#0b63d6';   // Autosav blue (top performer per card)
+const COLOR_OTHER = '#2176df'; // Secondary blue (every other user)
 
 const EVENT_LABELS = {
   // picking is measured in distinct orders, not units.

@@ -67,7 +67,7 @@
 .pos-legend { display:flex; gap:16px; font-size:12px; color: var(--text-secondary); margin-bottom: 4px; }
 .pos-legend span { display:inline-flex; align-items:center; gap:6px; }
 .pos-legend .sw { width:14px; height:3px; border-radius:2px; display:inline-block; }
-.pos-legend .sw.today { background:#8e2715; }
+.pos-legend .sw.today { background: var(--accent); }
 .pos-legend .sw.yest { background: var(--text-tertiary); }
 
 /* ── Charts ── */
@@ -88,7 +88,7 @@
   pointer-events:none; box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 5;
 }
 .pos-tip .tip-amt { font-family: var(--mono); font-weight: 600; }
-.pos-tip .tip-muted { color: #d8b7ad; }
+.pos-tip .tip-muted { color: #c6d8ee; }
 
 /* ── KPI strip ── */
 .pos-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; }
@@ -120,3 +120,17 @@
 .pos-split-legend span { display:inline-flex; align-items:center; gap:6px; }
 .pos-split-legend .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
 .pos-split-legend b { color: var(--text); font-family: var(--mono); }
+
+@media (max-width: 768px) {
+  .pos-card { padding: 14px; }
+  .pos-datebar { align-items: stretch; flex-direction: column; }
+  .pos-datebar > * { width: 100% !important; min-height: 44px; }
+  .pos-hero-top { flex-direction: column; }
+  .pos-net { font-size: 34px; }
+  .pos-asof { text-align: left; }
+  .pos-term-chips { justify-content: flex-start; }
+  .pos-kpis { grid-template-columns: 1fr; }
+  .pos-legend { flex-wrap: wrap; }
+  .pos-chart-wrap { overflow-x: auto; }
+  .pos-chart { min-width: 620px; }
+}

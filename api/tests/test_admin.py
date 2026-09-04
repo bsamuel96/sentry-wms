@@ -200,11 +200,15 @@ class TestBins:
     def test_create_bin(self, client, auth_headers):
         resp = client.post("/api/admin/bins", json={
             "zone_id": 2, "warehouse_id": 1, "bin_code": "C-01-01", "bin_barcode": "BIN-C-01-01",
-            "bin_type": "Pickable", "aisle": "C", "row_num": "01", "level_num": "01",
+            "bin_type": "Pickable", "aisle": "C", "row_num": "a", "level_num": "01",
+            "position_num": "1",
             "pick_sequence": 1000,
         }, headers=auth_headers)
         assert resp.status_code == 201
-        assert resp.get_json()["bin_code"] == "C-01-01"
+        body = resp.get_json()
+        assert body["bin_code"] == "C-01-01"
+        assert body["row_num"] == "a"
+        assert body["position_num"] == "1"
 
     def test_create_bin_invalid_type(self, client, auth_headers):
         resp = client.post("/api/admin/bins", json={
@@ -1413,12 +1417,34 @@ class TestCsvImport:
         resp = client.post("/api/admin/import/bins", json={
             "records": [
                 {"bin_code": "D-01-01", "bin_barcode": "BIN-D-01-01", "bin_type": "Pickable",
-                 "zone_id": 2, "warehouse_id": 1, "pick_sequence": 1100},
+                 "zone_id": 2, "warehouse_id": 1, "aisle": "D", "row_num": "f",
+                 "position_num": "3", "pick_sequence": 1100},
             ]
         }, headers=auth_headers)
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["imported"] == 1
+        coords = _query_val(
+            "SELECT aisle || ':' || row_num || ':' || position_num FROM bins WHERE bin_code = 'D-01-01'"
+        )
+        assert coords == "D:f:3"
+
+    def test_import_bins_reports_duplicates_and_invalid_zone_warehouse_pairs(self, client, auth_headers):
+        resp = client.post("/api/admin/import/bins", json={
+            "records": [
+                {"bin_code": "A-01-01", "zone_id": 2, "warehouse_id": 1},
+                {"bin_code": "BAD-ZONE", "zone_id": 999999, "warehouse_id": 1},
+                {"bin_code": "BAD-WH", "zone_id": 2, "warehouse_id": 2},
+            ]
+        }, headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["imported"] == 0
+        assert data["skipped"] == 3
+        messages = " ".join(error["error"] for error in data["errors"])
+        assert "Duplicate bin_code" in messages
+        assert "Zone id 999999 not found" in messages
+        assert "belongs to warehouse" in messages
 
     def test_import_invalid_entity(self, client, auth_headers):
         resp = client.post("/api/admin/import/invalid", json={"records": []}, headers=auth_headers)

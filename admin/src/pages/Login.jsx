@@ -61,15 +61,15 @@ export default function Login() {
       <div className="login-card">
         <div className="login-logo">
           <svg width="24" height="24" viewBox="0 0 32 32">
-            <rect x="1" y="1" width="30" height="30" rx="5" fill="#8e2715"/>
-            <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-            <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-            <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+            <rect x="1" y="1" width="30" height="30" rx="5" fill="#0b63d6"/>
+            <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FFFFFF" strokeWidth="1.6"/>
+            <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FFFFFF" strokeWidth="1.6"/>
+            <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+            <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+            <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+            <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+            <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
+            <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FFFFFF" strokeWidth="1" opacity="0.55"/>
           </svg>
           Sentry WMS
         </div>

@@ -38,6 +38,10 @@ describe('CSV import templates', () => {
     expect(cols).toContain('zone');
     expect(cols).toContain('warehouse_id');
     expect(cols).toContain('bin_type');
+    expect(cols).toContain('aisle');
+    expect(cols).toContain('row_num');
+    expect(cols).toContain('level_num');
+    expect(cols).toContain('position_num');
     expect(cols).toContain('pick_sequence');
     expect(cols).toContain('putaway_sequence');
   });

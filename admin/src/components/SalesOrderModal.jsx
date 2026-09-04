@@ -1198,11 +1198,11 @@ export default function SalesOrderModal({ soId, mode = 'view', onClose, onChange
             <section className="section">
               <div style={{
                 padding: 10,
-                borderLeft: '3px solid #b87333', backgroundColor: '#fdf6ed',
+                borderLeft: '3px solid var(--accent)', backgroundColor: '#edf5ff',
                 whiteSpace: 'pre-wrap',
               }}>
                 <div style={{
-                  fontSize: 11, fontWeight: 700, color: '#b87333',
+                  fontSize: 11, fontWeight: 700, color: 'var(--accent)',
                   letterSpacing: 0.4, marginBottom: 4,
                 }}>NOTE</div>
                 <div style={{ fontSize: 13, lineHeight: 1.4 }}>{selectedSO.memo}</div>

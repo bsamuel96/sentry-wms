@@ -117,7 +117,8 @@ export default function DataTable({
   if (data && data.length > 0) warnOnBadKeys(resolvedKeys, rowKey, columns);
 
   return (
-    <div className="data-table-wrapper">
+    <div className="data-table-wrapper" tabIndex="0" aria-label="Tabel derulabil pe orizontală">
+      <div className="table-scroll-cue" aria-hidden="true">↔ Derulează pentru toate coloanele</div>
       <table className="data-table">
         <thead>
           <tr>
