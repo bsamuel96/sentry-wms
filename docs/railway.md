@@ -20,7 +20,13 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
 CELERY_BROKER_URL=${{Redis.REDIS_URL}}
 CELERY_RESULT_BACKEND=${{Redis.REDIS_URL}}
+SENTRY_INBOUND_MAPPINGS_DIR=/app/db/mappings
 ```
+
+Railpack checks out the repository under `/app`, so inbound mapping documents
+committed under `db/mappings/` are available at `/app/db/mappings`. The default
+`/db/mappings` path is intended for the Docker Compose volume mount and must not
+be used for this Railway setup.
 
 Set `ADMIN_PASSWORD` to a unique value of at least 12 characters. The first
 pre-deploy initializes the schema and a minimal admin account. Later deploys

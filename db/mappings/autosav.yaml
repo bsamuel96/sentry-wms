@@ -1,0 +1,52 @@
+mapping_version: "1.0"
+source_system: "autosav"
+version_compare: "iso_timestamp"
+
+# Autosav is the product-catalog owner. Only the operational identity needed
+# for warehouse execution is projected into Sentry WMS. Prices, supplier
+# offers, TecDoc enrichment and ledger balances intentionally stay in Autosav.
+resources:
+  items:
+    canonical_type: "item"
+    fields:
+      - canonical: "sku"
+        source_path: "$.sku"
+        type: "string"
+        required: true
+
+      - canonical: "item_name"
+        source_path: "$.name"
+        type: "string"
+        required: true
+
+      - canonical: "description"
+        source_path: "$.description"
+        type: "string"
+        required: false
+
+      - canonical: "upc"
+        source_path: "$.upc"
+        type: "string"
+        required: false
+
+      - canonical: "mpn"
+        source_path: "$.mpn"
+        type: "string"
+        required: false
+
+      - canonical: "category"
+        source_path: "$.category"
+        type: "string"
+        required: false
+
+      - canonical: "is_lot_tracked"
+        source_path: "$.tracking.lot"
+        type: "boolean"
+        required: false
+        default: false
+
+      - canonical: "is_active"
+        source_path: "$.is_active"
+        type: "boolean"
+        required: false
+        default: true
