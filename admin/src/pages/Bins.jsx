@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
@@ -274,6 +274,7 @@ export default function Bins() {
         >
           {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
+        <Link className="btn" to="/data/labels" style={{ marginRight: 8 }}>Etichete cod de bare</Link>
         <button className="btn btn-primary" onClick={() => { setForm({ is_active: true }); setShowCreate(true); setError(''); }}>New Bin</button>
       </PageHeader>
       <DataTable rowKey="bin_id" columns={columns} data={bins} pagination={pagination} onPageChange={setPage} onRowClick={viewBin} />

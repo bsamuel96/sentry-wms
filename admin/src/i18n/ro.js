@@ -40,6 +40,7 @@ const TEXT = {
   'Fraud Review': 'Verificare fraudă',
   'Inter-Warehouse Transfers': 'Transferuri între depozite',
   Bins: 'Locații de stocare',
+  'Barcode Labels': 'Etichete cod de bare',
   'Bin Code': 'Cod locație',
   'New Bin': 'Locație nouă',
   'Select type': 'Selectează tipul',

@@ -1,0 +1,353 @@
+.label-builder-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(210px, 260px) minmax(240px, 1fr);
+  gap: 16px;
+  align-items: end;
+}
+
+.label-scope-picker {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.label-scope-picker legend,
+.label-format-picker > span,
+.label-search > span {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.label-scope-picker legend {
+  flex: 0 0 100%;
+}
+
+.label-format-picker,
+.label-search {
+  margin: 0;
+}
+
+.label-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.label-selection-actions [role='status'] {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.label-print-button {
+  margin-left: auto;
+}
+
+.label-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 8px;
+  max-height: 390px;
+  margin-top: 14px;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+.label-source-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  cursor: pointer;
+}
+
+.label-source-option:hover,
+.label-source-option.selected {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.label-source-option input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.label-source-option span {
+  min-width: 0;
+}
+
+.label-source-option strong,
+.label-source-option small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label-source-option strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.label-source-option small {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.label-preview-section {
+  overflow-x: auto;
+}
+
+.bin-label-print-area {
+  display: grid;
+  gap: 6mm;
+  width: fit-content;
+  min-width: 100%;
+  padding: 8mm;
+  background: #e7edf5;
+  color: #0f172a;
+}
+
+.bin-label-print-area.format-a4 {
+  grid-template-columns: repeat(3, 60mm);
+  justify-content: center;
+}
+
+.bin-label-print-area.format-thermal-100,
+.bin-label-print-area.format-thermal-62 {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.warehouse-label {
+  display: flex;
+  flex-direction: column;
+  width: 60mm;
+  height: 36mm;
+  box-sizing: border-box;
+  padding: 3mm 4mm;
+  overflow: hidden;
+  border: 0.35mm solid #0b63d6;
+  border-radius: 2mm;
+  background: #fff;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.format-thermal-100 .warehouse-label {
+  width: 100mm;
+  height: 50mm;
+  padding: 4mm 6mm;
+  border-radius: 0;
+}
+
+.format-thermal-62 .warehouse-label {
+  width: 62mm;
+  height: 30mm;
+  padding: 2mm 3mm;
+  border-radius: 0;
+}
+
+.warehouse-label header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  color: #0b63d6;
+  font-size: 6.5pt;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.warehouse-label-warehouse {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-label-title {
+  display: block;
+  margin-top: 1mm;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 17pt;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.format-thermal-100 .warehouse-label-title {
+  font-size: 23pt;
+}
+
+.format-thermal-62 .warehouse-label-title {
+  margin-top: 0.5mm;
+  font-size: 14pt;
+}
+
+.warehouse-label-coordinates {
+  min-height: 3.5mm;
+  margin-top: 0.8mm;
+  overflow: hidden;
+  color: #52647c;
+  font-size: 7pt;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.format-thermal-100 .warehouse-label-coordinates {
+  font-size: 9pt;
+}
+
+.format-thermal-62 .warehouse-label-coordinates {
+  display: none;
+}
+
+.warehouse-label-barcode {
+  width: 100%;
+  min-height: 8mm;
+  margin-top: auto;
+  padding: 0 2mm;
+  box-sizing: border-box;
+}
+
+.format-thermal-100 .warehouse-label-barcode {
+  min-height: 14mm;
+}
+
+.format-thermal-62 .warehouse-label-barcode {
+  min-height: 9mm;
+}
+
+.warehouse-label-value {
+  display: block;
+  margin-top: 0.5mm;
+  overflow: hidden;
+  color: #0f172a;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.format-thermal-100 .warehouse-label-value {
+  font-size: 10pt;
+}
+
+@media (max-width: 768px) {
+  .label-builder-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .label-scope-picker {
+    flex-wrap: wrap;
+  }
+
+  .label-scope-picker .btn {
+    flex: 1;
+  }
+
+  .label-selection-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .label-selection-actions [role='status'] {
+    text-align: center;
+  }
+
+  .label-print-button {
+    margin-left: 0;
+  }
+
+  .label-source-list {
+    grid-template-columns: 1fr;
+    max-height: 45vh;
+  }
+
+  .bin-label-print-area {
+    justify-content: start;
+    min-width: max-content;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .bin-label-print-area,
+  .bin-label-print-area * {
+    visibility: visible !important;
+  }
+
+  html,
+  body,
+  #root,
+  .app-layout,
+  .content,
+  .bin-labels-page,
+  .label-preview-section {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .bin-label-print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    gap: 4mm;
+    min-width: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .bin-label-print-area.format-a4 {
+    grid-template-columns: repeat(3, 60mm);
+  }
+
+  .bin-label-print-area.format-thermal-100,
+  .bin-label-print-area.format-thermal-62 {
+    display: block;
+  }
+
+  .format-thermal-100 .warehouse-label,
+  .format-thermal-62 .warehouse-label {
+    margin: 0;
+    border: 0;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .format-thermal-100 .warehouse-label:last-child,
+  .format-thermal-62 .warehouse-label:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}

@@ -15,6 +15,7 @@ import { useAuth } from '../auth.jsx';
 const TABS = [
   { to: 'warehouses', label: 'Warehouses', pageKey: 'warehouses' },
   { to: 'bins', label: 'Bins', pageKey: 'bins' },
+  { to: 'labels', label: 'Barcode Labels', pageKey: 'bins' },
   { to: 'zones', label: 'Zones', pageKey: 'zones' },
   { to: 'preferred-bins', label: 'Preferred Bins', pageKey: 'preferred-bins' },
 ];

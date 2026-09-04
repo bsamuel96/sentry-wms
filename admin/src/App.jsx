@@ -21,6 +21,7 @@ import RMA from './pages/RMA.jsx';
 import Returns from './pages/Returns.jsx';
 import Refunds from './pages/Refunds.jsx';
 import Bins from './pages/Bins.jsx';
+import BinLabels from './pages/BinLabels.jsx';
 import Zones from './pages/Zones.jsx';
 import Items from './pages/Items.jsx';
 import Vendors from './pages/Vendors.jsx';
@@ -124,11 +125,13 @@ export default function App() {
         <Route path="/data" element={<ErrorBoundary fallbackMessage="Could not load warehouse data."><Data /></ErrorBoundary>}>
           <Route path="warehouses" element={<Warehouses />} />
           <Route path="bins" element={<Bins />} />
+          <Route path="labels" element={<BinLabels />} />
           <Route path="zones" element={<Zones />} />
           <Route path="preferred-bins" element={<PreferredBins />} />
         </Route>
         <Route path="/warehouses" element={<Navigate to="/data/warehouses" replace />} />
         <Route path="/bins" element={<Navigate to="/data/bins" replace />} />
+        <Route path="/bin-labels" element={<Navigate to="/data/labels" replace />} />
         <Route path="/zones" element={<Navigate to="/data/zones" replace />} />
         <Route path="/preferred-bins" element={<Navigate to="/data/preferred-bins" replace />} />
         <Route path="/users" element={<ErrorBoundary fallbackMessage="Could not load users."><Users /></ErrorBoundary>} />

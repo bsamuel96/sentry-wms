@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api.js';
-import { encodeCode128B } from '../utils/code128.js';
+import BarcodeSvg from '../components/BarcodeSvg.jsx';
 import { formatDateOnly } from '../utils/date.js';
 import './pickingTicket.css';
 
@@ -23,39 +23,6 @@ function shippingAddressLines(so) {
     return String(so.ship_address).split(/\r?\n/).filter(Boolean);
   }
   return lines;
-}
-
-function BarcodeSvg({ value, className, modulePx, height }) {
-  // Render Code 128 modules as <rect> elements. We never inject the
-  // user-supplied value into SVG text content, only into the encoder
-  // (which only emits numeric module widths) -- so this stays safe
-  // against arbitrary input.
-  const { bars, width } = useMemo(() => {
-    const { segments, totalModules } = encodeCode128B(value || '');
-    const out = [];
-    let cursor = 0;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const segWidth = seg.width * modulePx;
-      if (seg.black) out.push({ key: i, x: cursor, w: segWidth });
-      cursor += segWidth;
-    }
-    return { bars: out, width: totalModules * modulePx };
-  }, [value, modulePx]);
-  if (width === 0) return null;
-  return (
-    <svg
-      className={className}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={`Barcode ${value}`}
-    >
-      {bars.map((b) => (
-        <rect key={b.key} x={b.x} y={0} width={b.w} height={height} fill="#000" />
-      ))}
-    </svg>
-  );
 }
 
 export function TicketDocument({ so, lines, branding = {}, combineWith = [] }) {
