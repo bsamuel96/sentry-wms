@@ -227,6 +227,222 @@ register_inbound_resource("customers", "customers")
 
 
 # ----------------------------------------------------------------------
+# POST /api/v1/inbound/items/reset
+# ----------------------------------------------------------------------
+
+
+def _source_item_reset_snapshot(source_system: str) -> dict:
+    """Return the exact source-owned item set and any operational blockers.
+
+    The token-bound source_system is the security boundary.  Canonical items
+    are deletable only when no table has a foreign-key reference to them and
+    no second source maps to the same canonical item.
+    """
+    source_rows = g.db.execute(
+        text("""
+            SELECT i.item_id, i.external_id
+            FROM cross_system_mappings csm
+            JOIN items i
+              ON i.external_id = csm.canonical_id
+            WHERE csm.source_system = :source_system
+              AND csm.source_type = 'item'
+              AND csm.canonical_type = 'item'
+            ORDER BY i.item_id
+        """),
+        {"source_system": source_system},
+    ).fetchall()
+    item_ids = [int(row.item_id) for row in source_rows]
+
+    inbound_count = int(g.db.execute(
+        text("SELECT COUNT(*) FROM inbound_items WHERE source_system = :source_system"),
+        {"source_system": source_system},
+    ).scalar() or 0)
+    mapping_count = int(g.db.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM cross_system_mappings
+            WHERE source_system = :source_system
+              AND source_type = 'item'
+              AND canonical_type = 'item'
+        """),
+        {"source_system": source_system},
+    ).scalar() or 0)
+
+    dependency_counts = {}
+    shared_item_count = 0
+    if item_ids:
+        fk_rows = g.db.execute(text("""
+            SELECT
+                child_ns.nspname AS schema_name,
+                child.relname AS table_name,
+                child_col.attname AS column_name
+            FROM pg_constraint constraint_row
+            JOIN pg_class parent
+              ON parent.oid = constraint_row.confrelid
+            JOIN pg_namespace parent_ns
+              ON parent_ns.oid = parent.relnamespace
+            JOIN pg_class child
+              ON child.oid = constraint_row.conrelid
+            JOIN pg_namespace child_ns
+              ON child_ns.oid = child.relnamespace
+            JOIN LATERAL unnest(constraint_row.conkey) WITH ORDINALITY
+              AS child_key(attnum, ordinal_position) ON TRUE
+            JOIN LATERAL unnest(constraint_row.confkey) WITH ORDINALITY
+              AS parent_key(attnum, ordinal_position)
+              ON parent_key.ordinal_position = child_key.ordinal_position
+            JOIN pg_attribute child_col
+              ON child_col.attrelid = child.oid
+             AND child_col.attnum = child_key.attnum
+            JOIN pg_attribute parent_col
+              ON parent_col.attrelid = parent.oid
+             AND parent_col.attnum = parent_key.attnum
+            WHERE constraint_row.contype = 'f'
+              AND parent_ns.nspname = 'public'
+              AND parent.relname = 'items'
+              AND parent_col.attname = 'item_id'
+            ORDER BY child_ns.nspname, child.relname, child_col.attname
+        """)).fetchall()
+        for fk_row in fk_rows:
+            # Names originate in PostgreSQL's own system catalog. Quote them
+            # defensively before composing the identifier-only fragment.
+            schema_name = str(fk_row.schema_name).replace('"', '""')
+            table_name = str(fk_row.table_name).replace('"', '""')
+            column_name = str(fk_row.column_name).replace('"', '""')
+            count = int(g.db.execute(
+                text(
+                    f'SELECT COUNT(*) FROM "{schema_name}"."{table_name}" '
+                    f'WHERE "{column_name}" = ANY(CAST(:item_ids AS integer[]))'
+                ),
+                {"item_ids": item_ids},
+            ).scalar() or 0)
+            if count:
+                dependency_counts[f"{schema_name}.{table_name}.{column_name}"] = count
+
+        shared_item_count = int(g.db.execute(
+            text("""
+                SELECT COUNT(DISTINCT i.item_id)
+                FROM items i
+                JOIN cross_system_mappings other
+                  ON other.canonical_type = 'item'
+                 AND other.canonical_id = i.external_id
+                WHERE i.item_id = ANY(CAST(:item_ids AS integer[]))
+                  AND other.source_system <> :source_system
+            """),
+            {"item_ids": item_ids, "source_system": source_system},
+        ).scalar() or 0)
+
+    return {
+        "source_system": source_system,
+        "item_ids": item_ids,
+        "item_count": len(item_ids),
+        "inbound_document_count": inbound_count,
+        "mapping_count": mapping_count,
+        "shared_item_count": shared_item_count,
+        "dependency_counts": dependency_counts,
+        "blocked": bool(dependency_counts),
+    }
+
+
+def _items_reset_post():
+    """Preview or delete only item data owned by the token's source."""
+    payload = request.get_json(silent=True) or {}
+    source_system = g.current_token.get("source_system") if g.current_token else None
+    expected_source_system = str(payload.get("source_system") or "").strip()
+    dry_run = payload.get("dry_run") is True
+
+    if not source_system:
+        return jsonify({"error_kind": "token_missing_source_system"}), 401
+    if expected_source_system != source_system:
+        return jsonify({
+            "error_kind": "source_system_mismatch",
+            "token_source_system": source_system,
+        }), 403
+    if not dry_run and payload.get("confirm") != "DELETE_SOURCE_ITEMS":
+        return jsonify({
+            "error_kind": "confirmation_required",
+            "required_confirmation": "DELETE_SOURCE_ITEMS",
+        }), 422
+
+    try:
+        snapshot = _source_item_reset_snapshot(source_system)
+        public_snapshot = {
+            key: value for key, value in snapshot.items() if key != "item_ids"
+        }
+        if dry_run:
+            g.db.rollback()
+            return jsonify({"dry_run": True, **public_snapshot}), 200
+        if snapshot["blocked"]:
+            g.db.rollback()
+            return jsonify({
+                "error_kind": "source_items_have_operational_dependencies",
+                **public_snapshot,
+            }), 409
+
+        item_ids = snapshot["item_ids"]
+        deleted_inbound = int(g.db.execute(
+            text("DELETE FROM inbound_items WHERE source_system = :source_system"),
+            {"source_system": source_system},
+        ).rowcount or 0)
+        deleted_mappings = int(g.db.execute(
+            text("""
+                DELETE FROM cross_system_mappings
+                WHERE source_system = :source_system
+                  AND source_type = 'item'
+                  AND canonical_type = 'item'
+            """),
+            {"source_system": source_system},
+        ).rowcount or 0)
+        deleted_items = 0
+        if item_ids:
+            deleted_items = int(g.db.execute(
+                text("""
+                    DELETE FROM items candidate
+                    WHERE candidate.item_id = ANY(CAST(:item_ids AS integer[]))
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM cross_system_mappings remaining
+                          WHERE remaining.canonical_type = 'item'
+                            AND remaining.canonical_id = candidate.external_id
+                      )
+                """),
+                {"item_ids": item_ids},
+            ).rowcount or 0)
+        g.db.commit()
+    except Exception:
+        g.db.rollback()
+        raise
+
+    response = make_response(jsonify({
+        "deleted": True,
+        "source_system": source_system,
+        "deleted_items": deleted_items,
+        "deleted_mappings": deleted_mappings,
+        "deleted_inbound_documents": deleted_inbound,
+        "preserved_shared_items": snapshot["item_count"] - deleted_items,
+    }), 200)
+    response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+    return response
+
+
+def register_items_reset_route() -> None:
+    import os
+    rate_limit = os.getenv("INBOUND_RATE_LIMIT_PER_MINUTE", "500")
+    handler = _items_reset_post
+    handler = with_db(handler)
+    handler = require_wms_token(handler)
+    handler = limiter.limit(f"{rate_limit} per minute")(handler)
+    inbound_bp.add_url_rule(
+        "/items/reset",
+        endpoint="post_items_reset",
+        view_func=handler,
+        methods=["POST"],
+    )
+
+
+register_items_reset_route()
+
+
+# ----------------------------------------------------------------------
 # POST /api/v1/inbound/inventory_update
 # ----------------------------------------------------------------------
 #

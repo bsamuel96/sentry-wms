@@ -379,6 +379,7 @@ V150_ENDPOINT_SLUGS = {
 V170_INBOUND_RESOURCE_BY_ENDPOINT = {
     "inbound.post_sales_orders":     "sales_orders",
     "inbound.post_items":            "items",
+    "inbound.post_items_reset":      "items",
     "inbound.post_customers":        "customers",
     "inbound.post_vendors":          "vendors",
     "inbound.post_purchase_orders":  "purchase_orders",

@@ -124,6 +124,14 @@ def _post(client, plaintext, body):
     )
 
 
+def _post_reset(client, plaintext, body):
+    return client.post(
+        "/api/v1/inbound/items/reset",
+        headers={"X-WMS-Token": plaintext, "Content-Type": "application/json"},
+        data=json.dumps(body),
+    )
+
+
 @pytest.fixture(autouse=True)
 def _clear_token_cache():
     token_cache.clear()
@@ -203,6 +211,64 @@ class TestItemsEndpoint:
         })
         assert resp.status_code == 403
         assert resp.get_json() == {"error": "inbound_resource_scope_violation"}
+
+    def test_source_item_reset_previews_then_deletes_only_token_source(
+        self, client, app, scenario
+    ):
+        ss = scenario["ss"]
+        _build_registry(app, ss, _ITEMS_MAPPING.format(ss=ss))
+        _insert_token_via_test_conn(ss, "items-reset-1")
+        created = _post(client, "items-reset-1", {
+            "external_id": "ITEM-RESET-1",
+            "external_version": "v1",
+            "source_payload": {"sku": "SKU-RESET-1", "name": "Reset me"},
+        })
+        assert created.status_code == 201
+
+        preview = _post_reset(client, "items-reset-1", {
+            "source_system": ss,
+            "dry_run": True,
+        })
+        assert preview.status_code == 200
+        assert preview.get_json()["item_count"] == 1
+        assert preview.get_json()["blocked"] is False
+
+        deleted = _post_reset(client, "items-reset-1", {
+            "source_system": ss,
+            "confirm": "DELETE_SOURCE_ITEMS",
+        })
+        assert deleted.status_code == 200
+        assert deleted.get_json()["deleted_items"] == 1
+        assert deleted.get_json()["deleted_mappings"] == 1
+        assert _query(
+            "SELECT COUNT(*) FROM inbound_items WHERE source_system = %s", (ss,)
+        )[0][0] == 0
+        assert _query(
+            "SELECT COUNT(*) FROM cross_system_mappings WHERE source_system = %s", (ss,)
+        )[0][0] == 0
+        assert _query(
+            "SELECT COUNT(*) FROM items WHERE sku = 'SKU-RESET-1'"
+        )[0][0] == 0
+
+    def test_source_item_reset_requires_exact_source_and_confirmation(
+        self, client, app, scenario
+    ):
+        ss = scenario["ss"]
+        _build_registry(app, ss, _ITEMS_MAPPING.format(ss=ss))
+        _insert_token_via_test_conn(ss, "items-reset-guard")
+
+        mismatch = _post_reset(client, "items-reset-guard", {
+            "source_system": "not-the-token-source",
+            "dry_run": True,
+        })
+        assert mismatch.status_code == 403
+        assert mismatch.get_json()["error_kind"] == "source_system_mismatch"
+
+        missing_confirm = _post_reset(client, "items-reset-guard", {
+            "source_system": ss,
+        })
+        assert missing_confirm.status_code == 422
+        assert missing_confirm.get_json()["error_kind"] == "confirmation_required"
 
     def test_idempotent_repost_returns_200(self, client, app, scenario):
         ss = scenario["ss"]
