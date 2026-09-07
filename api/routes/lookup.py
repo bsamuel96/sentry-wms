@@ -11,6 +11,36 @@ from middleware.db import with_db
 lookup_bp = Blueprint("lookup", __name__)
 
 
+def _autosav_bin_code(barcode):
+    """Return the exact Sentry bin code encoded by an Autosav location QR.
+
+    Autosav storage labels use one of these compact formats::
+
+        ASL1*warehouse-code*A-a-1*warehouse-name
+        ASL2*warehouse-code*A*a*1*warehouse-name
+
+    ``ASL1`` originally named a row label, but existing Autosav labels also
+    carry a complete storage address in the third field.  Accepting that form
+    here keeps every scanner workflow compatible without teaching each mobile
+    screen about the Autosav envelope.  Some copied/scanner payloads preserve
+    an escaped separator (``\\*``), so normalise that as well.
+    """
+    raw = str(barcode or "").strip().replace(r"\*", "*")
+    separator = "*" if "*" in raw else ("|" if "|" in raw else None)
+    if not separator:
+        return raw
+
+    parts = [part.strip() for part in raw.split(separator)]
+    prefix = (parts[0] if parts else "").upper()
+    if prefix == "ASL1" and len(parts) >= 3:
+        return parts[2]
+    if prefix == "ASL2" and len(parts) >= 5:
+        address_parts = parts[2:5]
+        if all(address_parts):
+            return "-".join(address_parts)
+    return raw
+
+
 @lookup_bp.route("/item/<barcode>")
 @require_auth
 @with_db
@@ -87,7 +117,7 @@ def lookup_item(barcode):
 @require_auth
 @with_db
 def lookup_bin(barcode):
-    barcode = barcode.strip()
+    barcode = _autosav_bin_code(barcode)
 
     # V-026: scope warehouse in SELECT so a bin in another warehouse
     # returns 404, not 403.

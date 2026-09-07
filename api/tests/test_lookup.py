@@ -51,6 +51,32 @@ class TestBinLookup:
         assert "TST-001" in skus
         assert "TST-011" in skus
 
+    def test_lookup_bin_from_autosav_asl1_label(self, client, auth_headers):
+        resp = client.get(
+            "/api/lookup/bin/ASL1%2AAPT-LAB%2AA-01-01%2AApartment-Lab",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["bin"]["bin_code"] == "A-01-01"
+
+    def test_lookup_bin_from_autosav_asl1_label_with_escaped_separator(
+        self, client, auth_headers
+    ):
+        resp = client.get(
+            "/api/lookup/bin/ASL1%2AAPT-LAB%2AA-01-01%5C%2AApartment-Lab",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["bin"]["bin_code"] == "A-01-01"
+
+    def test_lookup_bin_from_autosav_asl2_label(self, client, auth_headers):
+        resp = client.get(
+            "/api/lookup/bin/ASL2%2AAPT-LAB%2AA%2A01%2A01%2AApartment-Lab",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["bin"]["bin_code"] == "A-01-01"
+
 
 class TestItemSearch:
     def test_search_items_by_sku(self, client, auth_headers):
