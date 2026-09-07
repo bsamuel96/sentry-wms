@@ -17,6 +17,7 @@ Coverage:
 """
 
 import os
+import json
 import sys
 import uuid
 
@@ -104,13 +105,23 @@ def _insert_bin(warehouse_id, bin_code, zone_id=1):
     return bin_id
 
 
-def _insert_item(sku, item_name="Test Item", upc=None, is_active=True):
+def _insert_item(
+    sku, item_name="Test Item", upc=None, is_active=True, barcode_aliases=None
+):
     conn = get_raw_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO items (sku, item_name, upc, is_active, external_id) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING item_id",
-        (sku, item_name, upc, is_active, str(uuid.uuid4())),
+        "INSERT INTO items "
+        "(sku, item_name, upc, barcode_aliases, is_active, external_id) "
+        "VALUES (%s, %s, %s, %s::jsonb, %s, %s) RETURNING item_id",
+        (
+            sku,
+            item_name,
+            upc,
+            json.dumps(barcode_aliases) if barcode_aliases is not None else None,
+            is_active,
+            str(uuid.uuid4()),
+        ),
     )
     item_id = cur.fetchone()[0]
     cur.close()
@@ -262,6 +273,42 @@ class TestHappyPathSeededData:
             headers={"X-WMS-Token": pos_token["plaintext"]},
         )
         assert sku_resp.get_json() == bc_resp.get_json()
+
+    def test_tecdoc_ean_alias_lookup_matches_primary_item(
+        self, client, seed_data
+    ):
+        warehouse_id = _insert_warehouse(
+            f"ean-wh-{uuid.uuid4().hex[:6]}", "EAN Warehouse"
+        )
+        bin_id = _insert_bin(warehouse_id, f"EAN-{uuid.uuid4().hex[:6]}")
+        alias = "4011558748210"
+        item_id = _insert_item(
+            sku=f"EAN-{uuid.uuid4().hex[:6]}",
+            upc="4011558748203",
+            barcode_aliases=[alias],
+        )
+        _insert_inventory(item_id, bin_id, warehouse_id, 7)
+
+        plaintext = f"ean-token-{uuid.uuid4()}"
+        token_id = insert_token(
+            name="POS EAN alias",
+            plaintext=plaintext,
+            warehouse_ids=[warehouse_id],
+            event_types=[],
+            inbound_resources=[],
+            source_system=None,
+            endpoints=["pos.dispatch"],
+        )
+        try:
+            response = client.get(
+                f"/api/v1/pos/availability?barcode={alias}",
+                headers={"X-WMS-Token": plaintext},
+            )
+            assert response.status_code == 200
+            assert response.get_json()["barcode"] == "4011558748203"
+            assert response.get_json()["availability"][0]["qty_available"] == 7
+        finally:
+            delete_token(token_id)
 
 
 class TestMultiWarehouseMultiBin:

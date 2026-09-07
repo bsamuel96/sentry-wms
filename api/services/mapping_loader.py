@@ -186,7 +186,7 @@ class FieldMapping(_StrictModel):
     def _check_field_shape(self) -> "FieldMapping":
         if self.type not in {
             "string", "integer", "decimal", "boolean", "uuid",
-            "iso_timestamp", "enum",
+            "iso_timestamp", "enum", "json",
         }:
             raise ValueError(f"unknown field type: {self.type!r}")
         if self.type == "enum" and not self.enum_values:
@@ -580,6 +580,14 @@ def _coerce_or_default(field: FieldMapping, value: Any) -> Any:
         return value
     if field.type == "decimal":
         return _coerce_decimal(field, value)
+    if field.type == "json":
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"field {field.canonical!r}: value is not JSON serialisable: {exc}"
+            ) from exc
+        return value
     return value
 
 

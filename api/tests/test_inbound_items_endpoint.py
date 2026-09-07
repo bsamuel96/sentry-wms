@@ -60,6 +60,9 @@ resources:
       - canonical: "weight_lbs"
         source_path: "$.weightLbs"
         type: "decimal"
+      - canonical: "barcode_aliases"
+        source_path: "$.barcode_aliases"
+        type: "json"
 """
 
 
@@ -191,6 +194,30 @@ class TestItemsEndpoint:
         )
         assert len(rows) == 1
         assert rows[0] == ("CREATE", "INBOUND_ITEM")
+
+    def test_item_mapping_writes_scannable_barcode_aliases(
+        self, client, app, scenario
+    ):
+        ss = scenario["ss"]
+        _build_registry(app, ss, _ITEMS_MAPPING.format(ss=ss))
+        _insert_token_via_test_conn(ss, "items-aliases")
+        aliases = ["4011558748210", "4011558748227"]
+        resp = _post(client, "items-aliases", {
+            "external_id": "ITEM-EAN-ALIASES",
+            "external_version": "v1",
+            "source_payload": {
+                "sku": "W79-ALIASES",
+                "name": "Filtru ulei",
+                "barcode_aliases": aliases,
+            },
+        })
+
+        assert resp.status_code == 201
+        rows = _query(
+            "SELECT barcode_aliases FROM items WHERE external_id = %s",
+            (resp.get_json()["canonical_id"],),
+        )
+        assert rows[0][0] == aliases
 
     def test_scope_violation_when_token_lacks_items_resource(
         self, client, app, scenario

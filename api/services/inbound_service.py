@@ -519,6 +519,11 @@ def handle_inbound(
         if overrides
         else document.field_set(resource_key)
     )
+    json_field_set = {
+        field.canonical
+        for field in document.resources[resource_key].fields
+        if field.type == "json"
+    }
 
     # v1.8.0 (#300): warehouse_id token fallback. When the resolved
     # canonical_payload has no warehouse_id (source did not provide,
@@ -578,7 +583,7 @@ def handle_inbound(
 
     is_new, canonical_id = _upsert_canonical(
         db, cfg, source_system, external_id, canonical_payload,
-        write_field_set,
+        write_field_set, json_field_set,
     )
 
     # ----- Step 6.5: line-item write-through (v1.8.0 #289) -----
@@ -728,6 +733,7 @@ def _upsert_canonical(
     external_id: str,
     canonical_payload: Dict[str, Any],
     field_set: set,
+    json_field_set: set,
 ) -> Tuple[bool, UUID]:
     """Return (is_new, canonical_id).
 
@@ -737,9 +743,9 @@ def _upsert_canonical(
 
     Subsequent path: read canonical_id from cross_system_mappings, UPDATE
     canonical with only the field_set columns + updated_at +
-    latest_inbound_id stays NULL until step 8. line_items (any list
-    value in canonical_payload) are excluded from the canonical write
-    by design (v1.7 first-pass; line tables sync at v1.8+)."""
+    latest_inbound_id stays NULL until step 8. A mapped type=json field may
+    contain a list; line_items remain excluded because their canonical_path is
+    not part of the top-level field_set."""
 
     existing_mapping = db.execute(
         text(
@@ -750,11 +756,16 @@ def _upsert_canonical(
         {"ss": source_system, "st": cfg.canonical_type, "sid": external_id},
     ).fetchone()
 
-    # Filter to columns the mapping declares; line_items (lists) excluded.
+    # Filter to columns the top-level mapping declares. A line_items
+    # canonical_path is not part of field_set, so it remains excluded while
+    # mapped JSON columns (for example items.barcode_aliases) can be written.
     write_payload = {
         k: v for k, v in canonical_payload.items()
-        if k in field_set and not isinstance(v, list)
+        if k in field_set and (not isinstance(v, list) or k in json_field_set)
     }
+
+    def _adapt_db_value(key, value):
+        return Json(value) if key in json_field_set and value is not None else value
 
     if existing_mapping is None:
         # First-time-receipt: INSERT canonical + INSERT cross_system_mappings.
@@ -783,7 +794,7 @@ def _upsert_canonical(
             vals.append(canonical_id)
         placeholders = ", ".join([f":{c}" for c in cols])
         col_list = ", ".join(cols)
-        params = {c: v for c, v in zip(cols, vals)}
+        params = {c: _adapt_db_value(c, v) for c, v in zip(cols, vals)}
         try:
             db.execute(
                 text(f"INSERT INTO {cfg.canonical_table} ({col_list}) "
@@ -816,7 +827,10 @@ def _upsert_canonical(
         set_clause = ", ".join([f"{c} = :{c}" for c in write_payload.keys()])
         if cfg.has_updated_at_col:
             set_clause += ", updated_at = NOW()"
-        params = dict(write_payload)
+        params = {
+            key: _adapt_db_value(key, value)
+            for key, value in write_payload.items()
+        }
         params["cid"] = str(canonical_id)
         db.execute(
             text(f"UPDATE {cfg.canonical_table} "

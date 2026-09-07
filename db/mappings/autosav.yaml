@@ -29,6 +29,11 @@ resources:
         type: "string"
         required: false
 
+      - canonical: "barcode_aliases"
+        source_path: "$.barcode_aliases"
+        type: "json"
+        required: false
+
       - canonical: "mpn"
         source_path: "$.mpn"
         type: "string"

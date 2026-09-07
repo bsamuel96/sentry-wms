@@ -162,6 +162,7 @@ def availability():
     Service surfaces the empty case as "out of stock" via the
     `availability: []` shape rather than a 404.
 
+    Barcode lookup accepts the primary UPC and every barcode_aliases value.
     SKU truly missing OR only present in warehouses outside the token
     scope -> 404 item_not_found (conflated to prevent enumeration).
     """
@@ -196,10 +197,11 @@ def availability():
                 SELECT item_id, sku, item_name, upc, is_active
                   FROM items
                  WHERE upc = :barcode
+                    OR barcode_aliases @> CAST(:barcode_json AS jsonb)
                  LIMIT 1
                 """
             ),
-            {"barcode": barcode},
+            {"barcode": barcode, "barcode_json": json.dumps([barcode])},
         ).fetchone()
     else:
         item = g.db.execute(
