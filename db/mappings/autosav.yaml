@@ -1,6 +1,6 @@
-mapping_version: "1.0"
+mapping_version: "1.1"
 source_system: "autosav"
-version_compare: "iso_timestamp"
+version_compare: "lexicographic"
 
 # Autosav is the product-catalog owner. Only the operational identity needed
 # for warehouse execution is projected into Sentry WMS. Prices, supplier
