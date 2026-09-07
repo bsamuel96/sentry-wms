@@ -4,6 +4,7 @@ import Text, { TextInput } from './LocalizedText';
 import { colors, fonts, radii } from '../theme/styles';
 import { useScanSettingsContext } from '../context/ScanSettingsContext';
 import CameraScannerModal from './CameraScannerModal';
+import { normalizeScannedBarcode } from '../utils/barcodes';
 
 export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabled = false, autoFocus = true, suppressRefocus = false }) {
   const inputRef = useRef(null);
@@ -22,7 +23,7 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
   const scanInFlightRef = useRef(false);
 
   const processBarcode = useCallback((raw, refocusAfter = false) => {
-    const trimmed = String(raw || '').replace(/[\r\n\s]+/g, '').trim();
+    const trimmed = normalizeScannedBarcode(raw);
 
     setValue('');
     bufferRef.current = '';

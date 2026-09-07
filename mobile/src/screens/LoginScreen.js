@@ -214,7 +214,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <TouchableOpacity style={styles.serverInfo} onPress={openServerModal}>
-            <Text style={styles.version}>v1.38.0 Autosav</Text>
+            <Text style={styles.version}>v1.38.1 Autosav</Text>
             {serverDisplay ? (
               <Text style={styles.serverUrlText} numberOfLines={1}>{serverDisplay}</Text>
             ) : null}

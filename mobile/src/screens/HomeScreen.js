@@ -12,7 +12,6 @@ import client, { getStoredApiUrl, setApiUrl } from '../api/client';
 import { colors, fonts, radii, spacing } from '../theme/styles';
 
 const FUNCTIONS = [
-  { key: 'sell', label: 'CASĂ / POS', sub: 'Vânzare cu scanare', screen: 'Pos', accent: 'red' },
   { key: 'pick', label: 'COLECTARE', sub: 'Pregătește comenzile', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
   { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
@@ -460,7 +459,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.38.0 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.38.1 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}

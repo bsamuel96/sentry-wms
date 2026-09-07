@@ -2,6 +2,14 @@
 
 All notable changes to Sentry WMS will be documented in this file.
 
+## [v1.38.1] - 2026-09-07
+
+**Mobile.** The APK moves to version 1.38.1, versionCode 16. The counter-sale
+card, route and bundled POS implementation are removed so the handheld remains
+a warehouse-only application. The server-side POS API is unchanged. Autosav
+`ASL1` and `ASL2` location QR envelopes are normalized on-device before bin
+lookup, including labels whose escaped separator is preserved by a scanner.
+
 ## [v1.38.0] - 2026-09-07
 
 Sentry Mobile is now Romanian-first and includes an atomic counter-sale workflow.
