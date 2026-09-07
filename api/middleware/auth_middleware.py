@@ -388,6 +388,7 @@ V170_INBOUND_RESOURCE_BY_ENDPOINT = {
     # marketplace mirror, drift correction). See routes/inbound.py
     # _inventory_update_post + register_inventory_update_route.
     "inbound.post_inventory_update": "inventory_update",
+    "inbound.post_storage_bins":     "inventory_update",
 }
 
 

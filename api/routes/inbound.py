@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError as _SAIntegrityError
 from middleware.auth_middleware import require_wms_token
 from middleware.db import with_db
 from schemas.inbound import InboundBody
+from schemas.csv_import import BinImportRow
 from services.audit_service import write_audit_log
 from services.events_service import emit_event, resolve_source_external_id
 from services.inbound_service import (
@@ -54,7 +55,7 @@ from services.webhook_dispatcher.backorder_notifier import (
 )
 from services.mapping_loader import MappingDocument
 from services.rate_limit import limiter
-from constants import ACTION_ADJUST, ADJ_APPROVED
+from constants import ACTION_ADJUST, ADJ_APPROVED, BIN_PICKABLE
 
 
 inbound_bp = Blueprint("inbound", __name__)
@@ -750,5 +751,211 @@ def register_inventory_update_route() -> None:
 
 
 register_inventory_update_route()
+
+
+# ----------------------------------------------------------------------
+# POST /api/v1/inbound/storage_bins
+# ----------------------------------------------------------------------
+
+def _storage_bins_post():
+    """Idempotently mirror an upstream warehouse's physical bin structure.
+
+    The route intentionally reuses the ``inventory_update`` inbound scope:
+    creating the target bins is a prerequisite of that state-sync contract.
+    It never deletes bins or inventory and supports a read-only dry run.
+    """
+    try:
+        body = InboundBody.model_validate(request.get_json(silent=False))
+    except ValidationError as exc:
+        response = make_response(
+            jsonify({"error_kind": "validation_error", "details": exc.errors(include_url=False)}),
+            422,
+        )
+        response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+        return response
+
+    sp = body.source_payload or {}
+    try:
+        warehouse_id = int(sp.get("warehouse_id"))
+    except (TypeError, ValueError):
+        warehouse_id = 0
+    zone_code = str(sp.get("zone_code") or "PICK").strip().upper()
+    records = sp.get("bins")
+    dry_run = bool(sp.get("dry_run", False))
+    if warehouse_id <= 0 or not zone_code or not isinstance(records, list):
+        response = make_response(jsonify({
+            "error_kind": "invalid_storage_bins_payload",
+            "required": ["warehouse_id", "zone_code", "bins[]"],
+        }), 422)
+        response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+        return response
+    if len(records) > 5000:
+        response = make_response(jsonify({"error_kind": "too_many_bins", "maximum": 5000}), 422)
+        response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+        return response
+
+    warehouse = g.db.execute(
+        text("SELECT warehouse_id FROM warehouses WHERE warehouse_id = :wid"),
+        {"wid": warehouse_id},
+    ).fetchone()
+    if not warehouse:
+        response = make_response(jsonify({
+            "error_kind": "warehouse_not_found", "warehouse_id": warehouse_id,
+        }), 404)
+        response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+        return response
+
+    validated = []
+    errors = []
+    seen_codes = set()
+    for index, raw_record in enumerate(records, 1):
+        candidate = dict(raw_record) if isinstance(raw_record, dict) else {}
+        candidate["warehouse_id"] = warehouse_id
+        candidate["zone"] = zone_code
+        try:
+            row = BinImportRow.model_validate(candidate)
+        except ValidationError as exc:
+            errors.append({"row": index, "error": exc.errors(include_url=False)[0].get("msg", "invalid")})
+            continue
+        code_key = row.bin_code.casefold()
+        if code_key in seen_codes:
+            errors.append({"row": index, "bin_code": row.bin_code, "error": "duplicate bin_code in request"})
+            continue
+        seen_codes.add(code_key)
+        validated.append(row)
+
+    if errors:
+        response = make_response(jsonify({
+            "error_kind": "invalid_storage_bins", "errors": errors, "failed": len(errors),
+        }), 422)
+        response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+        return response
+
+    zone = g.db.execute(
+        text("""
+            SELECT zone_id, zone_code FROM zones
+            WHERE warehouse_id = :wid AND LOWER(zone_code) = LOWER(:code)
+            LIMIT 1
+        """),
+        {"wid": warehouse_id, "code": zone_code},
+    ).fetchone()
+    zone_will_be_created = zone is None
+    if zone_will_be_created and not dry_run:
+        zone = g.db.execute(
+            text("""
+                INSERT INTO zones (warehouse_id, zone_code, zone_name, zone_type)
+                VALUES (:wid, :code, :name, 'PICKING')
+                RETURNING zone_id, zone_code
+            """),
+            {"wid": warehouse_id, "code": zone_code, "name": str(sp.get("zone_name") or "Pick Zone")[:100]},
+        ).fetchone()
+
+    existing_rows = g.db.execute(
+        text("""
+            SELECT bin_id, zone_id, bin_code, bin_barcode, bin_type, aisle,
+                   row_num, level_num, position_num, pick_sequence, putaway_sequence
+            FROM bins WHERE warehouse_id = :wid
+        """),
+        {"wid": warehouse_id},
+    ).fetchall()
+    existing_by_code = {str(row.bin_code).casefold(): row for row in existing_rows}
+    desired_zone_id = zone.zone_id if zone else None
+    created = updated = unchanged = 0
+
+    def _text_value(value):
+        return str(value or "").strip()
+
+    for row in validated:
+        existing = existing_by_code.get(row.bin_code.casefold())
+        desired = {
+            "barcode": row.bin_barcode or row.bin_code,
+            "type": row.bin_type or BIN_PICKABLE,
+            "aisle": row.aisle,
+            "row_num": row.row_num,
+            "level_num": row.level_num,
+            "position_num": row.position_num,
+            "pick_sequence": row.pick_sequence or 0,
+            "putaway_sequence": row.putaway_sequence or 0,
+        }
+        if not existing:
+            created += 1
+            if not dry_run:
+                g.db.execute(text("""
+                    INSERT INTO bins (
+                        zone_id, warehouse_id, bin_code, bin_barcode, bin_type,
+                        aisle, row_num, level_num, position_num,
+                        pick_sequence, putaway_sequence, description, external_id
+                    ) VALUES (
+                        :zone_id, :warehouse_id, :bin_code, :barcode, :type,
+                        :aisle, :row_num, :level_num, :position_num,
+                        :pick_sequence, :putaway_sequence, :description, :external_id
+                    )
+                """), {
+                    "zone_id": desired_zone_id, "warehouse_id": warehouse_id,
+                    "bin_code": row.bin_code, **desired,
+                    "description": row.description, "external_id": str(uuid.uuid4()),
+                })
+            continue
+
+        differs = (
+            existing.zone_id != desired_zone_id
+            or _text_value(existing.bin_barcode) != _text_value(desired["barcode"])
+            or _text_value(existing.bin_type) != _text_value(desired["type"])
+            or _text_value(existing.aisle) != _text_value(desired["aisle"])
+            or _text_value(existing.row_num) != _text_value(desired["row_num"])
+            or _text_value(existing.level_num) != _text_value(desired["level_num"])
+            or _text_value(existing.position_num) != _text_value(desired["position_num"])
+            or int(existing.pick_sequence or 0) != desired["pick_sequence"]
+            or int(existing.putaway_sequence or 0) != desired["putaway_sequence"]
+        )
+        if not differs:
+            unchanged += 1
+            continue
+        updated += 1
+        if not dry_run:
+            g.db.execute(text("""
+                UPDATE bins SET
+                    zone_id = :zone_id, bin_barcode = :barcode, bin_type = :type,
+                    aisle = :aisle, row_num = :row_num, level_num = :level_num,
+                    position_num = :position_num, pick_sequence = :pick_sequence,
+                    putaway_sequence = :putaway_sequence
+                WHERE bin_id = :bin_id
+            """), {"zone_id": desired_zone_id, "bin_id": existing.bin_id, **desired})
+
+    if not dry_run:
+        g.db.commit()
+    response = make_response(jsonify({
+        "ok": True,
+        "dry_run": dry_run,
+        "warehouse_id": warehouse_id,
+        "zone_code": zone_code,
+        "zone_created": zone_will_be_created,
+        "desired": len(validated),
+        "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
+        "failed": 0,
+        "errors": [],
+    }), 200)
+    response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
+    return response
+
+
+def register_storage_bins_route() -> None:
+    import os
+    rate_limit = os.getenv("INBOUND_RATE_LIMIT_PER_MINUTE", "500")
+    handler = _storage_bins_post
+    handler = with_db(handler)
+    handler = require_wms_token(handler)
+    handler = limiter.limit(f"{rate_limit} per minute")(handler)
+    inbound_bp.add_url_rule(
+        "/storage_bins",
+        endpoint="post_storage_bins",
+        view_func=handler,
+        methods=["POST"],
+    )
+
+
+register_storage_bins_route()
 register_inbound_resource("vendors", "vendors")
 register_inbound_resource("purchase_orders", "purchase_orders")
