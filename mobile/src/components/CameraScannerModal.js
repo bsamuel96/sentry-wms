@@ -5,10 +5,10 @@ import {
   Pressable,
   SafeAreaView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Text from './LocalizedText';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { colors, fonts, radii } from '../theme/styles';
 

@@ -8,9 +8,10 @@ The remaining three POST routes (validate-cart, checkout, refund)
 arrive in subsequent commits and reuse this blueprint.
 
 Per-request shape:
-- @require_wms_token: validates X-WMS-Token, refuses cross-direction
-  bridging, refuses tokens without pos.dispatch in endpoints. The
-  decorator's V1100 dispatcher branch is what gates this surface.
+- @require_pos_access accepts either the existing X-WMS-Token contract
+  (strict pos.dispatch scope and cross-direction checks) or a normal Sentry
+  user JWT. JWT users must be ADMIN or hold the ``sell`` mobile-function
+  grant and remain restricted to their assigned warehouses.
 - @limiter.limit per route, keyed on the token. Availability is the
   high-frequency path (one call per barcode scan); the 120/min budget
   reflects that.
@@ -49,7 +50,7 @@ from constants import (
     ACTION_POS_REFUND,
     SO_WAITING_STOCK,
 )
-from middleware.auth_middleware import require_wms_token
+from middleware.auth_middleware import require_pos_access
 
 # Warehouse a create-without-stock backorder is assigned to. The backorder
 # lines carry no location of their own, so the SO needs a header warehouse:
@@ -149,7 +150,7 @@ def _validate_lookup_value(value, field_name):
 
 
 @pos_bp.route("/availability", methods=["GET"])
-@require_wms_token
+@require_pos_access
 @limiter.limit("120 per minute")
 @with_db
 def availability():
@@ -346,7 +347,7 @@ def _classify_line(row, token_warehouse_ids):
 
 
 @pos_bp.route("/sales-orders/<so_number>", methods=["GET"])
-@require_wms_token
+@require_pos_access
 @limiter.limit("120 per minute")
 @with_db
 def sales_order_lookup(so_number):
@@ -452,7 +453,7 @@ def sales_order_lookup(so_number):
 
 
 @pos_bp.route("/validate-cart", methods=["POST"])
-@require_wms_token
+@require_pos_access
 @limiter.limit("60 per minute")
 @with_db
 def validate_cart():
@@ -577,6 +578,26 @@ def _pydantic_invalid_body(exc):
     )
 
 
+def _jwt_cashier_identity_error(cashier_id):
+    """Prevent a mobile JWT user from writing another operator as cashier.
+
+    Integration-token callers remain unchanged because their upstream POS is
+    responsible for supplying the cashier identity.  Interactive mobile users
+    are authenticated individuals, so their audit identity is not caller-
+    selectable.
+    """
+    if g.current_token.get("kind") != "jwt_user":
+        return None
+    expected = str(g.current_user.get("username") or g.current_user.get("user_id") or "")
+    if str(cashier_id) == expected:
+        return None
+    return _err(
+        "cashier_identity_mismatch",
+        "cashier_id must match the authenticated mobile user",
+        403,
+    )
+
+
 def _set_lock_timeouts(db):
     """Apply SENTRY_POS_LOCK_TIMEOUT_MS / STATEMENT_TIMEOUT_MS to the
     current transaction. SQLite or any non-Postgres engine in tests
@@ -591,7 +612,7 @@ def _set_lock_timeouts(db):
 
 
 @pos_bp.route("/checkout", methods=["POST"])
-@require_wms_token
+@require_pos_access
 @limiter.limit(
     "30 per minute",
     exempt_when=lambda: getattr(g, "_pos_replay_hit", False),
@@ -624,6 +645,10 @@ def checkout():
         return _pydantic_invalid_body(exc)
     except Exception:
         return _err("invalid_body", "body is not valid JSON", 422)
+
+    cashier_error = _jwt_cashier_identity_error(body.cashier_id)
+    if cashier_error is not None:
+        return cashier_error
 
     body_dict = body.model_dump(mode="json")
 
@@ -1400,7 +1425,7 @@ def _bulk_resolve_locations(db, lines_locations):
 
 
 @pos_bp.route("/refund", methods=["POST"])
-@require_wms_token
+@require_pos_access
 @limiter.limit(
     "10 per minute",
     exempt_when=lambda: getattr(g, "_pos_replay_hit", False),
@@ -1441,6 +1466,10 @@ def refund():
         return _pydantic_invalid_body(exc)
     except Exception:
         return _err("invalid_body", "body is not valid JSON", 422)
+
+    cashier_error = _jwt_cashier_identity_error(body.cashier_id)
+    if cashier_error is not None:
+        return cashier_error
 
     body_dict = body.model_dump(mode="json")
     body_hash = canonical_body_sha256(body_dict)
@@ -2001,7 +2030,7 @@ def refund():
 
 
 @pos_bp.route("/reference-orders", methods=["POST"])
-@require_wms_token
+@require_pos_access
 @limiter.limit(
     "30 per minute",
     exempt_when=lambda: getattr(g, "_pos_replay_hit", False),

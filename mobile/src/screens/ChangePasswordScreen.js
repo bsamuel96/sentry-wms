@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -10,6 +8,7 @@ import {
   ScrollView,
   BackHandler,
 } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import { colors, radii } from '../theme/styles';

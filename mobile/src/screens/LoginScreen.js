@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Modal, Pressable } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Modal, Pressable } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth/AuthContext';
 import client, { getStoredApiUrl, setApiUrl, hasStoredApiUrl } from '../api/client';
@@ -213,7 +214,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <TouchableOpacity style={styles.serverInfo} onPress={openServerModal}>
-            <Text style={styles.version}>v1.37.1 Autosav</Text>
+            <Text style={styles.version}>v1.38.0 Autosav</Text>
             {serverDisplay ? (
               <Text style={styles.serverUrlText} numberOfLines={1}>{serverDisplay}</Text>
             ) : null}

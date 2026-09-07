@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, Vibration, Pressable, BackHandler, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, Vibration, Pressable, BackHandler, StyleSheet } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScanInput from '../components/ScanInput';

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, Pressable, View, TouchableOpacity, StyleSheet } from 'react-native';
+import Text from './LocalizedText';
 import { colors, fonts, radii } from '../theme/styles';
 
 /**

@@ -52,7 +52,7 @@ def test_me_admin_all_functions(client, auth_headers):
     data = resp.get_json()
     assert data["username"] == "admin"
     assert data["role"] == "ADMIN"
-    assert set(data["allowed_functions"]) == {"receive", "putaway", "pick", "pack", "ship", "count", "transfer"}
+    assert set(data["allowed_functions"]) == {"receive", "putaway", "pick", "pack", "ship", "count", "transfer", "sell"}
     assert data["require_packing"] is True
 
 
@@ -140,6 +140,114 @@ def test_me_empty_functions(client, auth_headers):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["allowed_functions"] == []
+
+
+# ── Mobile POS JWT access ────────────────────────────────────
+
+
+def test_pos_availability_accepts_admin_mobile_jwt(client, auth_headers):
+    """The mobile register reuses the user's JWT, never a bundled WMS token."""
+    resp = client.get(
+        "/api/v1/pos/availability?sku=TST-001",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["sku"] == "TST-001"
+    assert data["availability"][0]["warehouse_id"] == "APT-LAB"
+
+
+def test_pos_availability_requires_sell_grant_for_non_admin(client, auth_headers):
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO users (
+               username, password_hash, full_name, role, warehouse_id,
+               warehouse_ids, allowed_functions, external_id
+           ) VALUES (
+               'mobile-no-sell',
+               '$2b$12$zDGRKFLmc6v/A4mVhxOzb.7uoW1ulnXn0AisK5uJ5iWk33vC2EpSK',
+               'Mobile No Sell', 'USER', 1, '{1}', '{pick}', gen_random_uuid()
+           )"""
+    )
+    cur.close()
+
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "mobile-no-sell", "password": "admin"},
+    )
+    token = login.get_json()["token"]
+    resp = client.get(
+        "/api/v1/pos/availability?sku=TST-001",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403
+    assert resp.get_json()["error"] == "pos_access_denied"
+
+
+def test_pos_availability_accepts_sell_grant_for_non_admin(client, auth_headers):
+    conn = _db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO users (
+               username, password_hash, full_name, role, warehouse_id,
+               warehouse_ids, allowed_functions, external_id
+           ) VALUES (
+               'mobile-sell',
+               '$2b$12$zDGRKFLmc6v/A4mVhxOzb.7uoW1ulnXn0AisK5uJ5iWk33vC2EpSK',
+               'Mobile Sell', 'USER', 1, '{1}', '{sell}', gen_random_uuid()
+           )"""
+    )
+    cur.close()
+
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "mobile-sell", "password": "admin"},
+    )
+    token = login.get_json()["token"]
+    resp = client.get(
+        "/api/v1/pos/availability?sku=TST-001",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["sku"] == "TST-001"
+
+
+def test_mobile_pos_cannot_impersonate_another_cashier(client, auth_headers):
+    resp = client.post(
+        "/api/v1/pos/checkout",
+        headers=auth_headers,
+        json={
+            "idempotency_key": "11111111-1111-4111-8111-111111111111",
+            "external_txn_ref": None,
+            "cashier_id": "another-user",
+            "terminal_id": "mobile-test",
+            "completed_at": "2026-09-07T10:00:00Z",
+            "payment_summary": {
+                "method": "cash",
+                "subtotal_cents": 100,
+                "tax_cents": 21,
+                "total_cents": 121,
+                "tenders": [{
+                    "type": "cash",
+                    "amount_cents": 121,
+                    "amount_tendered_cents": 121,
+                    "change_cents": 0,
+                }],
+            },
+            "lines": [{
+                "sku": "TST-001",
+                "warehouse_id": "APT-LAB",
+                "bin_id": "A-01-01",
+                "quantity": 1,
+                "unit_price_cents": 100,
+                "tax_cents": 21,
+                "line_total_cents": 121,
+            }],
+        },
+    )
+    assert resp.status_code == 403
+    assert resp.get_json()["error_kind"] == "cashier_identity_mismatch"
 
 
 # ── Active batch endpoint ─────────────────────────────────────

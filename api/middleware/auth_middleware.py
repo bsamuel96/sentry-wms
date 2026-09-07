@@ -80,7 +80,7 @@ def require_auth(f):
         try:
             row = db.execute(
                 text(
-                    "SELECT role, is_active, warehouse_ids, password_changed_at, "
+                    "SELECT role, is_active, warehouse_ids, allowed_functions, password_changed_at, "
                     "must_change_password "
                     "FROM users WHERE user_id = :uid"
                 ),
@@ -112,6 +112,7 @@ def require_auth(f):
         # checks always reflect the current state.
         payload["role"] = row.role
         payload["warehouse_ids"] = list(row.warehouse_ids) if row.warehouse_ids else []
+        payload["allowed_functions"] = list(row.allowed_functions) if row.allowed_functions else []
         payload["allowed_pages"] = allowed_pages  # None for ADMIN, list for USER
 
         g.current_user = payload
@@ -647,5 +648,63 @@ def require_wms_token(f):
     # surfaces at CI time. functools.wraps copies __qualname__ from
     # the wrapped function, so the chain alone doesn't reveal the
     # decorator was applied; an explicit attribute does.
+    wrapper.__wms_token_protected__ = True
+    return wrapper
+
+
+def require_pos_access(f):
+    """Allow the POS surface to be used by either integration tokens or users.
+
+    Existing server-to-server callers keep the strict ``X-WMS-Token`` /
+    ``pos.dispatch`` contract.  The native mobile application uses its normal
+    bearer JWT and must be an ADMIN or have the ``sell`` mobile-function grant.
+    A synthetic ``g.current_token`` containing only the user's warehouse scope
+    lets the existing, heavily-tested POS transaction code remain the single
+    source of truth without ever shipping a WMS token in the APK.
+
+    When neither credential type is present, the request deliberately follows
+    the legacy WMS-token path so the public endpoint keeps returning the same
+    flattened ``invalid_token`` response.
+    """
+    token_protected = require_wms_token(f)
+
+    @require_auth
+    @wraps(f)
+    def user_protected(*args, **kwargs):
+        user = g.current_user
+        allowed = set(user.get("allowed_functions") or [])
+        if user.get("role") != "ADMIN" and "sell" not in allowed:
+            return jsonify({
+                "error": "pos_access_denied",
+                "message": "User does not have Sell (POS) access",
+            }), 403
+
+        warehouse_ids = list(user.get("warehouse_ids") or [])
+        if not warehouse_ids:
+            return jsonify({
+                "error": "pos_warehouse_access_required",
+                "message": "User is not assigned to a warehouse",
+            }), 403
+
+        g.current_token = {
+            "kind": "jwt_user",
+            "warehouse_ids": warehouse_ids,
+        }
+        return f(*args, **kwargs)
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.headers.get("X-WMS-Token"):
+            return token_protected(*args, **kwargs)
+        token, _source = _extract_token()
+        if token:
+            return user_protected(*args, **kwargs)
+        return token_protected(*args, **kwargs)
+
+    wrapper.__pos_access_protected__ = True
+    # Keep the legacy marker because this wrapper still enforces the full
+    # X-WMS-Token contract whenever that credential is supplied.  CI and
+    # route audits can therefore continue to recognise the POS surface as
+    # token-protected while also checking the more specific hybrid marker.
     wrapper.__wms_token_protected__ = True
     return wrapper

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
+import { Modal, View, Pressable, FlatList, StyleSheet } from 'react-native';
+import Text from './LocalizedText';
 import { colors, fonts, radii } from '../theme/styles';
 
 export default function WarehouseSelector({ visible, warehouses, selected, onSelect, onClose }) {

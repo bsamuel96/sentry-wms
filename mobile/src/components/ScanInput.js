@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import Text, { TextInput } from './LocalizedText';
 import { colors, fonts, radii } from '../theme/styles';
 import { useScanSettingsContext } from '../context/ScanSettingsContext';
 import CameraScannerModal from './CameraScannerModal';

@@ -48,3 +48,25 @@ Pachetul Android este `ro.autosavcar.sentrywms`, separat de aplicația upstream.
 
 Camera este disponibilă în toate fluxurile care folosesc câmpul comun de
 scanare: recepție, put-away, picking, packing, expediere, inventar și transfer.
+
+## Casă / POS pe telefon
+
+Cardul `CASĂ / POS` apare automat pentru administratori. Pentru un operator
+obișnuit, bifează `Vânzare (POS)` în Admin → Utilizatori → Funcții permise și
+atribuie-i depozitul din care poate vinde. Aplicația folosește autentificarea
+normală a operatorului; nu introduce și nu distribuie un token WMS pe telefon.
+
+Fluxul de vânzare este:
+
+1. Scanează eticheta produsului sau introdu SKU-ul.
+2. Dacă produsul există în mai multe locații, alege locația din care se vinde.
+3. Reglează cantitatea și introdu prețul final pe bucată, cu TVA inclus.
+4. Alege numerar sau card. Pentru card se notează numai marca, ultimele patru
+   cifre, codul de autorizare și referința terminalului; nu se introduce PAN/CVV.
+5. Apasă `VALIDEAZĂ ȘI FINALIZEAZĂ`. Serverul verifică din nou stocul și
+   înregistrează vânzarea plus ieșirea din stoc într-o singură tranzacție.
+
+Sentry nu deține lista comercială de prețuri și nu procesează plata bancară;
+prețul final este introdus de casier, iar datele cardului confirmă o plată deja
+acceptată de terminal. Repetarea aceleiași cereri după o eroare de rețea nu
+dublează vânzarea, deoarece checkout-ul folosește o cheie de idempotency.

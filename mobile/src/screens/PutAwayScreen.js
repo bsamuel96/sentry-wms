@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, StyleSheet } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
 import PagedList from '../components/PagedList';

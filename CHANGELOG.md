@@ -2,6 +2,22 @@
 
 All notable changes to Sentry WMS will be documented in this file.
 
+## [v1.38.0] - 2026-09-07
+
+Sentry Mobile is now Romanian-first and includes an atomic counter-sale workflow.
+
+**Mobile.** The APK moves to version 1.38.0, versionCode 15.
+
+### Added
+
+- **Casă / POS pe telefon:** authorized operators can scan a barcode or SKU, choose an in-scope stock location, build a quantity-controlled cart, enter the final VAT-inclusive unit price, record cash or card-terminal confirmation, and complete the sale. The mobile app validates availability immediately before checkout; checkout remains atomic and idempotent on the existing `/api/v1/pos` engine, so a retry cannot duplicate the sale. Card entry intentionally accepts only brand, last four digits, authorization code, and terminal reference; Sentry never requests or stores a full card number.
+- **User-authenticated POS access:** the existing server-to-server `X-WMS-Token` + `pos.dispatch` contract remains unchanged. The same endpoints now also accept the mobile user's bearer JWT for ADMIN users or users granted `sell`, restricted to their assigned warehouse IDs. No WMS integration token is embedded in the APK.
+- **Romanian mobile interface:** common screens, actions, scanner prompts, validation messages, and the new POS workflow render in Romanian through a shared localized Text/TextInput layer.
+
+### Changed
+
+- The mobile build declares local app-version ownership for EAS and includes the camera permission required by ordinary Android phones.
+
 ## [v1.37.0] - 2026-08-20
 
 Sales orders open in place from any queue, a related-records tab, and admin tables that no longer hand a cell's state to the wrong record.

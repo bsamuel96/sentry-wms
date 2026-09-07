@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sentry WMS",
     "slug": "sentry-wms",
-    "version": "1.37.1",
+    "version": "1.38.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,11 +22,12 @@
         "backgroundColor": "#0b63d6"
       },
       "package": "ro.autosavcar.sentrywms",
-      "versionCode": 14,
+      "versionCode": 15,
       "permissions": [
         "INTERNET",
         "VIBRATE",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA"
       ]
     },
     "plugins": [
@@ -42,6 +43,12 @@
       ],
       "./plugins/chainway-scanner",
       "./plugins/with-cleartext-traffic"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4a4c288d-efc4-46e5-93ee-b2550697cfe6"
+      }
+    },
+    "owner": "gsam"
   }
 }

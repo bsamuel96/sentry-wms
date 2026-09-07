@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import Text from './LocalizedText';
 import { colors, fonts, radii } from '../theme/styles';
 
 export default function UnpickableOrdersModal({ visible, unpickable, onCancel, onContinue }) {

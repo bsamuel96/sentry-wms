@@ -697,7 +697,7 @@ CREATE TABLE users (
     role VARCHAR(20) NOT NULL DEFAULT 'USER',  -- 'ADMIN', 'USER'
     warehouse_id INT REFERENCES warehouses(warehouse_id),
     warehouse_ids INT[] DEFAULT '{}',          -- multi-warehouse assignment
-    allowed_functions TEXT[] DEFAULT '{}',      -- mobile module access: receive, putaway, pick, pack, ship, count, transfer
+    allowed_functions TEXT[] DEFAULT '{}',      -- mobile module access: receive, putaway, pick, pack, ship, count, transfer, sell
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     last_login TIMESTAMPTZ,

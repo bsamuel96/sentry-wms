@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import Text from '../components/LocalizedText';
 import { colors, fonts, radii, screenStyles, buttonStyles, doneStyles } from '../theme/styles';
 
 export default function PickCompleteScreen({ navigation, route }) {

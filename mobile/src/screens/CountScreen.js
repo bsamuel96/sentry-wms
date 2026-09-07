@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScanInput from '../components/ScanInput';

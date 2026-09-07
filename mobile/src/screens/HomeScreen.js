@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator, StyleSheet, TextInput } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import Text, { TextInput } from '../components/LocalizedText';
 import { useFocusEffect, useScrollToTop } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthContext';
 import { useScanSettingsContext } from '../context/ScanSettingsContext';
@@ -11,13 +12,14 @@ import client, { getStoredApiUrl, setApiUrl } from '../api/client';
 import { colors, fonts, radii, spacing } from '../theme/styles';
 
 const FUNCTIONS = [
-  { key: 'pick', label: 'PICK', sub: 'Pick orders', screen: 'PickScan', accent: 'red' },
-  { key: 'pack', label: 'PACK', sub: 'Verify & pack', screen: 'Pack', accent: 'red' },
-  { key: 'receive', label: 'RECEIVE', sub: 'PO receiving', screen: 'Receive', accent: 'copper' },
-  { key: 'putaway', label: 'PUT-AWAY', sub: 'Bin placement', screen: 'PutAway', accent: 'copper' },
-  { key: 'transfer', label: 'TRANSFER', sub: 'Bin to bin', screen: 'Transfer', accent: 'gray' },
-  { key: 'count', label: 'COUNT', sub: 'Cycle count', screen: 'Count', accent: 'gray' },
-  { key: 'ship', label: 'SHIP', sub: 'Fulfill & ship', screen: 'Ship', accent: 'gray' },
+  { key: 'sell', label: 'CASĂ / POS', sub: 'Vânzare cu scanare', screen: 'Pos', accent: 'red' },
+  { key: 'pick', label: 'COLECTARE', sub: 'Pregătește comenzile', screen: 'PickScan', accent: 'red' },
+  { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
+  { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
+  { key: 'putaway', label: 'DEPOZITARE', sub: 'Așezare în locație', screen: 'PutAway', accent: 'copper' },
+  { key: 'transfer', label: 'TRANSFER', sub: 'Dintr-o locație în alta', screen: 'Transfer', accent: 'gray' },
+  { key: 'count', label: 'INVENTAR', sub: 'Numără stocul', screen: 'Count', accent: 'gray' },
+  { key: 'ship', label: 'EXPEDIERE', sub: 'Finalizează expedierea', screen: 'Ship', accent: 'gray' },
 ];
 
 const ACCENT_COLORS = {
@@ -437,7 +439,10 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 key={fn.key}
                 style={[styles.gridCard, isShip && styles.gridCardFull]}
-                onPress={() => navigation.navigate(fn.screen)}
+                onPress={() => navigation.navigate(fn.screen, {
+                  warehouseCode,
+                  warehouseName,
+                })}
                 activeOpacity={0.7}
               >
                 <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
@@ -455,7 +460,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.37.1 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.38.0 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}

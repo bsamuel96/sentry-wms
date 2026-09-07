@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import Text from './LocalizedText';
 import { colors, fonts } from '../theme/styles';
 
 export default function PagedList({ items, pageSize = 20, renderItem }) {
