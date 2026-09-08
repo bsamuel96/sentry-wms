@@ -1,4 +1,4 @@
-mapping_version: "1.1"
+mapping_version: "1.2"
 source_system: "autosav"
 version_compare: "lexicographic"
 
@@ -6,6 +6,92 @@ version_compare: "lexicographic"
 # for warehouse execution is projected into Sentry WMS. Prices, supplier
 # offers, TecDoc enrichment and ledger balances intentionally stay in Autosav.
 resources:
+  sales_orders:
+    canonical_type: "sales_order"
+    fields:
+      - canonical: "so_number"
+        source_path: "$.order_number"
+        type: "string"
+        required: true
+
+      - canonical: "so_barcode"
+        source_path: "$.barcode"
+        type: "string"
+        required: true
+
+      - canonical: "warehouse_id"
+        source_path: "$.warehouse_id"
+        type: "integer"
+        required: true
+
+      - canonical: "customer_name"
+        source_path: "$.customer.name"
+        type: "string"
+        required: false
+
+      - canonical: "customer_phone"
+        source_path: "$.customer.phone"
+        type: "string"
+        required: false
+
+      - canonical: "customer_email"
+        source_path: "$.customer.email"
+        type: "string"
+        required: false
+
+      - canonical: "shipping_address_name"
+        source_path: "$.shipping.name"
+        type: "string"
+        required: false
+
+      - canonical: "shipping_address_line1"
+        source_path: "$.shipping.address.line1"
+        type: "string"
+        required: false
+
+      - canonical: "shipping_address_phone"
+        source_path: "$.shipping.phone"
+        type: "string"
+        required: false
+
+      - canonical: "order_date"
+        source_path: "$.order_date"
+        type: "iso_timestamp"
+        required: false
+
+      - canonical: "status"
+        source_path: "$.status"
+        type: "enum"
+        required: false
+        enum_values:
+          - "OPEN"
+          - "CANCELLED"
+
+      - canonical: "order_origin"
+        source_path: "$.order_origin"
+        type: "string"
+        required: false
+
+      - canonical: "memo"
+        source_path: "$.memo"
+        type: "string"
+        required: false
+
+    line_items:
+      source_path: "$.line_items"
+      canonical_path: "lines"
+      fields:
+        - canonical: "item_id"
+          source_path: "$.product_id"
+          type: "uuid"
+          required: true
+          cross_system_lookup:
+            source_type: "item"
+        - canonical: "quantity_ordered"
+          source_path: "$.quantity_ordered"
+          type: "integer"
+          required: true
+
   items:
     canonical_type: "item"
     fields:
