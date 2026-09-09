@@ -66,6 +66,53 @@ def _get_wave_breakdowns(pick_task_id):
 # --- Validation Tests ---
 
 
+def test_open_orders_worklist_lists_order_numbers_and_quantities(client, auth_headers):
+    """The handheld worklist exposes OPEN SOs without requiring a scan."""
+    resp = client.get(
+        "/api/picking/open-orders?warehouse_id=1&limit=500",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    by_number = {order["so_number"]: order for order in data["orders"]}
+
+    assert data["total"] >= 20
+    assert by_number["SO-2026-001"]["line_count"] == 1
+    assert by_number["SO-2026-001"]["unit_count"] == 2
+    assert by_number["SO-2026-001"]["active_batch_id"] is None
+    assert by_number["SO-2026-008"]["line_count"] == 5
+    assert by_number["SO-2026-008"]["unit_count"] == 9
+
+
+def test_open_orders_worklist_marks_orders_already_in_a_batch(client, auth_headers):
+    created = client.post(
+        "/api/picking/wave-create",
+        json={"so_ids": [1], "warehouse_id": 1},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    batch_id = created.get_json()["batch_id"]
+
+    resp = client.get(
+        "/api/picking/open-orders?warehouse_id=1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    order = next(
+        row for row in resp.get_json()["orders"]
+        if row["so_number"] == "SO-2026-001"
+    )
+    assert order["active_batch_id"] == batch_id
+    assert order["active_batch_assigned_to"] == "admin"
+
+
+def test_open_orders_worklist_requires_a_warehouse(client, auth_headers):
+    resp = client.get("/api/picking/open-orders", headers=auth_headers)
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "warehouse_id is required"
+
+
 def test_validate_valid_so(client, auth_headers):
     """Valid SO returns valid=true with line count and units."""
     resp = client.post(

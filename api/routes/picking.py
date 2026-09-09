@@ -8,6 +8,7 @@ from sqlalchemy.exc import OperationalError
 
 from constants import (
     BATCH_OPEN, BATCH_IN_PROGRESS,
+    SO_OPEN,
     TASK_PICKED, TASK_SHORT,
 )
 from middleware.auth_middleware import require_auth, check_warehouse_access
@@ -39,6 +40,98 @@ from services.picking_service import (
 from utils.validation import validate_body
 
 picking_bp = Blueprint("picking", __name__)
+
+
+@picking_bp.route("/open-orders")
+@require_auth
+@with_db
+def open_orders():
+    """Return the picker's visible OPEN sales-order worklist.
+
+    The handheld used to be scan-only, which meant an operator had to know an
+    SO barcode before they could start.  Keep this endpoint on the picking
+    permission surface (rather than the web-admin sales-order surface) and
+    scope it to the explicitly selected warehouse.
+    """
+    warehouse_id = request.args.get("warehouse_id", type=int)
+    if not warehouse_id or warehouse_id <= 0:
+        return jsonify({"error": "warehouse_id is required"}), 400
+
+    ok, denied = check_warehouse_access(warehouse_id)
+    if not ok:
+        return denied
+
+    limit = min(max(request.args.get("limit", 200, type=int) or 200, 1), 500)
+    rows = g.db.execute(
+        text(
+            """
+            SELECT so.so_id,
+                   so.so_number,
+                   so.so_barcode,
+                   so.customer_name,
+                   so.status,
+                   so.priority,
+                   so.order_date,
+                   so.created_at,
+                   line_stats.line_count,
+                   line_stats.unit_count,
+                   active_batch.batch_id AS active_batch_id,
+                   active_batch.assigned_to AS active_batch_assigned_to,
+                   COUNT(*) OVER () AS total_count
+              FROM sales_orders so
+              JOIN LATERAL (
+                    SELECT COUNT(*)::int AS line_count,
+                           COALESCE(SUM(GREATEST(
+                               sol.quantity_ordered - COALESCE(sol.quantity_picked, 0),
+                               0
+                           )), 0)::int AS unit_count
+                      FROM sales_order_lines sol
+                     WHERE sol.so_id = so.so_id
+              ) line_stats ON line_stats.line_count > 0
+              LEFT JOIN LATERAL (
+                    SELECT pb.batch_id, pb.assigned_to
+                      FROM pick_batch_orders pbo
+                      JOIN pick_batches pb ON pb.batch_id = pbo.batch_id
+                     WHERE pbo.so_id = so.so_id
+                       AND pb.status IN (:batch_open, :batch_in_progress)
+                     ORDER BY pb.created_at DESC, pb.batch_id DESC
+                     LIMIT 1
+              ) active_batch ON TRUE
+             WHERE so.warehouse_id = :warehouse_id
+               AND so.status = :so_open
+               AND COALESCE(so.order_type, 'sale') NOT IN ('return', 'refund')
+             ORDER BY so.created_at DESC NULLS LAST, so.so_id DESC
+             LIMIT :limit
+            """
+        ),
+        {
+            "warehouse_id": warehouse_id,
+            "so_open": SO_OPEN,
+            "batch_open": BATCH_OPEN,
+            "batch_in_progress": BATCH_IN_PROGRESS,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    orders = [
+        {
+            "so_id": row.so_id,
+            "so_number": row.so_number,
+            "so_barcode": row.so_barcode,
+            "customer_name": row.customer_name,
+            "status": row.status,
+            "priority": row.priority,
+            "order_date": row.order_date.isoformat() if row.order_date else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "line_count": row.line_count,
+            "unit_count": row.unit_count,
+            "active_batch_id": row.active_batch_id,
+            "active_batch_assigned_to": row.active_batch_assigned_to,
+        }
+        for row in rows
+    ]
+    total = int(rows[0].total_count) if rows else 0
+    return jsonify({"orders": orders, "total": total, "limit": limit})
 
 
 @picking_bp.route("/active-batch")

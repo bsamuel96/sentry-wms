@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Text from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
-import PagedList from '../components/PagedList';
 import UnpickableOrdersModal from '../components/UnpickableOrdersModal';
 import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
@@ -14,11 +14,38 @@ import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '..
 export default function PickScanScreen({ navigation }) {
   const { warehouseId } = useAuth();
   const [orders, setOrders] = useState([]);
+  const [openOrders, setOpenOrders] = useState([]);
+  const [openOrdersTotal, setOpenOrdersTotal] = useState(0);
+  const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
+  const [openOrdersError, setOpenOrdersError] = useState('');
   const { error, scanDisabled, showError, clearError } = useScreenError();
   const [loading, setLoading] = useState(false);
   // Unpickable list returned by the backend's 409 insufficient_coverage
   // response. Non-null while the modal is visible.
   const [unpickable, setUnpickable] = useState(null);
+
+  const loadOpenOrders = useCallback(async () => {
+    if (!warehouseId) return;
+    setOpenOrdersLoading(true);
+    setOpenOrdersError('');
+    try {
+      const resp = await client.get(
+        `/api/picking/open-orders?warehouse_id=${encodeURIComponent(warehouseId)}&limit=500`,
+      );
+      setOpenOrders(resp.data.orders || []);
+      setOpenOrdersTotal(resp.data.total || 0);
+    } catch (err) {
+      setOpenOrdersError(err.response?.data?.error || 'Lista comenzilor nu a putut fi încărcată.');
+    } finally {
+      setOpenOrdersLoading(false);
+    }
+  }, [warehouseId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOpenOrders();
+    }, [loadOpenOrders]),
+  );
 
   const handleScan = async (barcode) => {
     // Client-side duplicate check
@@ -72,6 +99,18 @@ export default function PickScanScreen({ navigation }) {
 
   const removeOrder = (so_id) => {
     setOrders((prev) => prev.filter((o) => o.so_id !== so_id));
+  };
+
+  const handleOrderPress = (order) => {
+    if (order.active_batch_id) {
+      showError(`Comanda este deja în colectare în lotul #${order.active_batch_id}.`);
+      return;
+    }
+    if (orders.some((selected) => selected.so_id === order.so_id)) {
+      removeOrder(order.so_id);
+      return;
+    }
+    handleScan(order.so_barcode || order.so_number);
   };
 
   const submitBatch = async (excludeSoIds = []) => {
@@ -181,32 +220,115 @@ export default function PickScanScreen({ navigation }) {
       />
 
       <View style={screenStyles.content}>
-        <View style={{ padding: 16, paddingBottom: 0 }}>
-          <ScanInput placeholder="SCAN SO OR TO" onScan={handleScan} disabled={scanDisabled} />
-        </View>
+        <FlatList
+          data={openOrders}
+          keyExtractor={(order) => String(order.so_id)}
+          contentContainerStyle={styles.listContent}
+          refreshing={openOrdersLoading}
+          onRefresh={loadOpenOrders}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={(
+            <>
+              <ScanInput placeholder="SCAN SO OR TO" onScan={handleScan} disabled={scanDisabled} />
 
-        <View style={{ flex: 1, paddingHorizontal: 16 }}>
-          <PagedList
-            items={orders}
-            pageSize={20}
-            renderItem={(order) => (
-              <View style={[listStyles.row, { padding: 14 }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.soNumber}>{order.so_number}</Text>
-                  <Text style={styles.orderDetail}>
-                    {order.item_count} item{order.item_count !== 1 ? 's' : ''} · {order.unit_count} unit{order.unit_count !== 1 ? 's' : ''}
+              {orders.length > 0 && (
+                <View style={styles.selectedSection}>
+                  <Text style={styles.sectionLabel}>SELECTATE PENTRU COLECTARE</Text>
+                  {orders.map((order) => (
+                    <View key={order.so_id} style={styles.selectedRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.soNumber}>{order.so_number}</Text>
+                        <Text style={styles.orderDetail}>
+                          {order.item_count} poziții · {order.unit_count} bucăți
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={listStyles.removeBtn}
+                        onPress={() => removeOrder(order.so_id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Elimină comanda ${order.so_number} din selecție`}
+                      >
+                        <Text style={listStyles.removeText}>X</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.openOrdersHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>COMENZI DESCHISE</Text>
+                  <Text style={styles.sectionHint}>Apasă o comandă pentru a o selecta.</Text>
+                </View>
+                <View style={styles.totalBadge}>
+                  <Text style={styles.totalBadgeText}>{openOrdersTotal}</Text>
+                </View>
+              </View>
+
+              {!!openOrdersError && (
+                <TouchableOpacity style={styles.inlineError} onPress={loadOpenOrders}>
+                  <Text style={styles.inlineErrorText}>{openOrdersError}</Text>
+                  <Text style={styles.retryText}>APASĂ PENTRU REÎNCERCARE</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+          ListEmptyComponent={openOrdersLoading ? (
+            <View style={styles.listLoading}>
+              <ActivityIndicator size="large" color={colors.accentRed} />
+              <Text style={styles.listLoadingText}>Se încarcă comenzile...</Text>
+            </View>
+          ) : !openOrdersError ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>NU EXISTĂ COMENZI DESCHISE</Text>
+              <Text style={styles.emptyText}>Trage în jos pentru actualizare.</Text>
+            </View>
+          ) : null}
+          renderItem={({ item: order }) => {
+            const selected = orders.some((entry) => entry.so_id === order.so_id);
+            const busy = Boolean(order.active_batch_id);
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.openOrderRow,
+                  selected && styles.openOrderRowSelected,
+                  busy && styles.openOrderRowBusy,
+                ]}
+                onPress={() => handleOrderPress(order)}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${order.so_number}, ${order.line_count} poziții, ${order.unit_count} bucăți`}
+              >
+                <View style={styles.orderMain}>
+                  <Text style={styles.openSoNumber}>{order.so_number}</Text>
+                  <Text style={styles.customerName}>{order.customer_name || 'Client nespecificat'}</Text>
+                  <Text style={styles.orderMeta}>
+                    {order.line_count} poziții · {order.unit_count} bucăți
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={listStyles.removeBtn}
-                  onPress={() => removeOrder(order.so_id)}
-                >
-                  <Text style={listStyles.removeText}>X</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          />
-        </View>
+                <View style={styles.orderAction}>
+                  <View style={[
+                    styles.orderStateBadge,
+                    selected && styles.orderStateBadgeSelected,
+                    busy && styles.orderStateBadgeBusy,
+                  ]}>
+                    <Text style={[
+                      styles.orderStateText,
+                      selected && styles.orderStateTextSelected,
+                      busy && styles.orderStateTextBusy,
+                    ]}>
+                      {busy ? 'ÎN COLECTARE' : selected ? 'SELECTATĂ' : 'DESCHIDE'}
+                    </Text>
+                  </View>
+                  {busy && (
+                    <Text style={styles.batchText}>Lot #{order.active_batch_id}</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
 
         <View style={screenStyles.bottomBar}>
           <TouchableOpacity
@@ -214,7 +336,9 @@ export default function PickScanScreen({ navigation }) {
             onPress={handleLoadAll}
             disabled={orders.length === 0}
           >
-            <Text style={buttonStyles.buttonPrimaryText}>LOAD ALL ORDERS</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>
+              {orders.length ? `ÎNCEPE COLECTAREA (${orders.length})` : 'ALEGE O COMANDĂ'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -236,6 +360,7 @@ export default function PickScanScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  listContent: { padding: 16, paddingBottom: 8 },
   badge: {
     backgroundColor: colors.accentRed, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: 'center',
@@ -243,6 +368,68 @@ const styles = StyleSheet.create({
   badgeText: { color: '#FFFFFF', fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
   soNumber: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   orderDetail: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  selectedSection: { marginTop: 14 },
+  sectionLabel: {
+    fontFamily: fonts.mono, fontSize: 11, fontWeight: '700', color: colors.textMuted,
+    letterSpacing: 0.5, marginBottom: 8,
+  },
+  selectedRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#eaf3ff',
+    borderWidth: 1.5, borderColor: colors.accentRed, borderRadius: radii.card,
+    paddingLeft: 14, marginBottom: 8, minHeight: 64,
+  },
+  openOrdersHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 20, marginBottom: 10,
+  },
+  sectionTitle: {
+    fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', color: colors.textPrimary,
+  },
+  sectionHint: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  totalBadge: {
+    minWidth: 36, height: 36, paddingHorizontal: 8, borderRadius: 18,
+    backgroundColor: '#eaf3ff', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.inputBorder,
+  },
+  totalBadgeText: { fontFamily: fonts.mono, color: colors.accentRed, fontWeight: '700' },
+  inlineError: {
+    padding: 14, borderRadius: radii.card, borderWidth: 1, borderColor: '#fecaca',
+    backgroundColor: '#fff7f7', marginBottom: 10,
+  },
+  inlineErrorText: { color: colors.danger, fontSize: 13 },
+  retryText: { color: colors.accentRed, fontFamily: fonts.mono, fontWeight: '700', fontSize: 11, marginTop: 6 },
+  listLoading: { paddingVertical: 40, alignItems: 'center' },
+  listLoadingText: { color: colors.textMuted, marginTop: 12 },
+  emptyState: {
+    padding: 28, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: radii.card, backgroundColor: colors.cardBg,
+  },
+  emptyTitle: { fontFamily: fonts.mono, fontWeight: '700', color: colors.textPrimary, fontSize: 14 },
+  emptyText: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
+  openOrderRow: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 92, padding: 14,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: radii.card, marginBottom: 9,
+  },
+  openOrderRowSelected: { backgroundColor: '#eaf3ff', borderWidth: 2, borderColor: colors.accentRed },
+  openOrderRowBusy: { backgroundColor: '#f8fafc' },
+  orderMain: { flex: 1, paddingRight: 10 },
+  openSoNumber: {
+    fontFamily: fonts.mono, fontSize: 17, lineHeight: 22, fontWeight: '800', color: colors.accentRed,
+  },
+  customerName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginTop: 4 },
+  orderMeta: { fontSize: 12, color: colors.textMuted, marginTop: 5 },
+  orderAction: { alignItems: 'flex-end', maxWidth: 118 },
+  orderStateBadge: {
+    minHeight: 36, paddingHorizontal: 11, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: colors.inputBorder,
+  },
+  orderStateBadgeSelected: { backgroundColor: colors.accentRed, borderColor: colors.accentRed },
+  orderStateBadgeBusy: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' },
+  orderStateText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.accentRed },
+  orderStateTextSelected: { color: '#ffffff' },
+  orderStateTextBusy: { color: colors.warning },
+  batchText: { fontSize: 10, color: colors.textMuted, marginTop: 5 },
   loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 32 },
   loadingText: { fontFamily: fonts.mono, fontSize: 14, color: colors.textMuted, marginTop: 16, textAlign: 'center' },
 });
