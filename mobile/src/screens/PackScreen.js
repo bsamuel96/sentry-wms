@@ -5,6 +5,7 @@ import Text from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ScreenHeader from '../components/ScreenHeader';
 import ErrorPopup from '../components/ErrorPopup';
+import { BusySkeleton } from '../components/LoadingSkeleton';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, modalStyles } from '../theme/styles';
@@ -18,6 +19,7 @@ export default function PackScreen({ navigation, route }) {
   const { error, scanDisabled, showError, clearError } = useScreenError();
   const [showSODetail, setShowSODetail] = useState(false);
   const [soDetail, setSODetail] = useState(null);
+  const [busyMessage, setBusyMessage] = useState('');
 
   // Auto-load SO if navigated from home screen scan
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function PackScreen({ navigation, route }) {
   }, []);
 
   const handleScanOrder = async (barcode) => {
+    setBusyMessage('Se deschide comanda...');
     try {
       const resp = await client.get(`/api/packing/order/${encodeURIComponent(barcode)}`);
       const data = resp.data;
@@ -41,6 +44,8 @@ export default function PackScreen({ navigation, route }) {
       setPhase('packing');
     } catch (err) {
       showError(err.response?.data?.error || 'Order not found');
+    } finally {
+      setBusyMessage('');
     }
   };
 
@@ -89,11 +94,14 @@ export default function PackScreen({ navigation, route }) {
     items.every((item) => (item.verified || 0) >= (item.quantity_picked ?? item.quantity_ordered));
 
   const handleCompletePack = async () => {
+    setBusyMessage('Se confirmă ambalarea...');
     try {
       await client.post('/api/packing/complete', { so_id: order.so_id });
       setPhase('done');
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to complete pack');
+    } finally {
+      setBusyMessage('');
     }
   };
 
@@ -113,6 +121,10 @@ export default function PackScreen({ navigation, route }) {
     setItems([]);
     setPhase('scan_order');
   };
+
+  if (busyMessage) {
+    return <BusySkeleton title={busyMessage} detail="Actualizăm etapa comenzii în depozit." />;
+  }
 
   return (
     <View style={screenStyles.screen}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, Pressable, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import { useFocusEffect, useScrollToTop } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthContext';
@@ -8,11 +8,12 @@ import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import WarehouseSelector from '../components/WarehouseSelector';
+import { OperationGridSkeleton } from '../components/LoadingSkeleton';
 import client, { getStoredApiUrl, setApiUrl } from '../api/client';
 import { colors, fonts, radii, spacing } from '../theme/styles';
 
 const FUNCTIONS = [
-  { key: 'pick', label: 'COLECTARE', sub: 'Pregătește comenzile', screen: 'PickScan', accent: 'red' },
+  { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
   { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
   { key: 'putaway', label: 'DEPOZITARE', sub: 'Așezare în locație', screen: 'PutAway', accent: 'copper' },
@@ -100,7 +101,9 @@ export default function HomeScreen({ navigation }) {
       setBadges({
         receive: stats.pending_receipts || 0,
         putaway: stats.items_awaiting_putaway || 0,
-        pick: stats.orders_ready_to_pick || 0,
+        // The card opens the complete OPEN worklist, including a batch that
+        // has already started and can now be resumed from that same list.
+        pick: stats.open_sos || 0,
         pack: stats.ready_to_pack || 0,
         ship: stats.ready_to_ship || 0,
         count: 0,
@@ -124,6 +127,8 @@ export default function HomeScreen({ navigation }) {
     useCallback(() => {
       loadData();
       getStoredApiUrl().then(setServerUrl);
+      const timer = setInterval(loadData, 10000);
+      return () => clearInterval(timer);
     }, [loadData])
   );
 
@@ -423,10 +428,10 @@ export default function HomeScreen({ navigation }) {
           disabled={scanDisabled}
         />
 
-        <Text style={styles.operationsLabel}>OPERATIONS</Text>
+        <Text style={styles.operationsLabel}>ETAPE DEPOZIT</Text>
 
         {initialLoading ? (
-          <ActivityIndicator size="large" color={colors.accentRed} style={{ marginTop: 32 }} />
+          <OperationGridSkeleton />
         ) : (
         <View style={styles.grid}>
           {visibleFunctions.map((fn, index) => {
@@ -446,6 +451,11 @@ export default function HomeScreen({ navigation }) {
               >
                 <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
                 <View style={[styles.accentDash, { backgroundColor: accentColor }]} />
+                {badgeCount > 0 ? (
+                  <View style={[styles.cardBadge, { backgroundColor: accentColor }]}>
+                    <Text style={styles.cardBadgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.cardLabel}>{fn.label}</Text>
                 <Text style={styles.cardSub}>{fn.sub}</Text>
               </TouchableOpacity>
@@ -459,7 +469,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.38.1 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.40.1 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}

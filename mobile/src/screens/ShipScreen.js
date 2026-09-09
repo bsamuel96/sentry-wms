@@ -5,6 +5,7 @@ import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ScreenHeader from '../components/ScreenHeader';
 import ErrorPopup from '../components/ErrorPopup';
+import { BusySkeleton } from '../components/LoadingSkeleton';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles } from '../theme/styles';
@@ -23,6 +24,7 @@ export default function ShipScreen({ navigation, route }) {
   const { error, scanDisabled, showError, clearError } = useScreenError();
   const [showSODetail, setShowSODetail] = useState(false);
   const [soDetail, setSODetail] = useState(null);
+  const [busyMessage, setBusyMessage] = useState('');
 
   const CARRIERS = ['UPS', 'FedEx', 'USPS', 'DHL', 'Amazon', 'Other'];
 
@@ -35,6 +37,7 @@ export default function ShipScreen({ navigation, route }) {
   }, []);
 
   const handleScanOrder = async (barcode) => {
+    setBusyMessage('Se deschide comanda...');
     try {
       const resp = await client.get(`/api/shipping/order/${encodeURIComponent(barcode)}`);
       const data = resp.data;
@@ -44,6 +47,8 @@ export default function ShipScreen({ navigation, route }) {
       setPhase('shipping');
     } catch (err) {
       showError(err.response?.data?.error || 'Order not found');
+    } finally {
+      setBusyMessage('');
     }
   };
 
@@ -52,6 +57,7 @@ export default function ShipScreen({ navigation, route }) {
       showError('Carrier and tracking number are required');
       return;
     }
+    setBusyMessage('Se confirmă expedierea...');
     try {
       await client.post('/api/shipping/fulfill', {
         so_id: order.so_id,
@@ -62,6 +68,8 @@ export default function ShipScreen({ navigation, route }) {
       setPhase('done');
     } catch (err) {
       showError(err.response?.data?.error || 'Shipment failed');
+    } finally {
+      setBusyMessage('');
     }
   };
 
@@ -84,6 +92,10 @@ export default function ShipScreen({ navigation, route }) {
     setCarrier('');
     setTracking('');
   };
+
+  if (busyMessage) {
+    return <BusySkeleton title={busyMessage} detail="Trimitem confirmarea către Autosav." />;
+  }
 
   return (
     <View style={screenStyles.screen}>

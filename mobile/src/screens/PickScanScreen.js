@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Text from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
@@ -9,10 +9,11 @@ import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import { BusySkeleton, OrderListSkeleton } from '../components/LoadingSkeleton';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
 export default function PickScanScreen({ navigation }) {
-  const { warehouseId } = useAuth();
+  const { warehouseId, user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [openOrders, setOpenOrders] = useState([]);
   const [openOrdersTotal, setOpenOrdersTotal] = useState(0);
@@ -44,6 +45,8 @@ export default function PickScanScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadOpenOrders();
+      const timer = setInterval(loadOpenOrders, 10000);
+      return () => clearInterval(timer);
     }, [loadOpenOrders]),
   );
 
@@ -103,7 +106,19 @@ export default function PickScanScreen({ navigation }) {
 
   const handleOrderPress = (order) => {
     if (order.active_batch_id) {
-      showError(`Comanda este deja în colectare în lotul #${order.active_batch_id}.`);
+      if (order.active_batch_assigned_to
+          && order.active_batch_assigned_to !== user?.username) {
+        showError(`Comanda este în colectare la ${order.active_batch_assigned_to}.`);
+        return;
+      }
+      navigation.replace('PickWalk', {
+        batch_id: order.active_batch_id,
+        batch: {
+          batch_id: order.active_batch_id,
+          total_orders: 1,
+          total_picks: order.line_count || 0,
+        },
+      });
       return;
     }
     if (orders.some((selected) => selected.so_id === order.so_id)) {
@@ -195,20 +210,13 @@ export default function PickScanScreen({ navigation }) {
   };
 
   if (loading) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={colors.accentRed} />
-        <Text style={styles.loadingText}>
-          Building pick path for {orders.length} order{orders.length !== 1 ? 's' : ''}...
-        </Text>
-      </View>
-    );
+    return <BusySkeleton title="Se pregătește traseul de colectare..." detail={`${orders.length} comenzi selectate`} />;
   }
 
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="PICK ORDERS"
+        title="COMENZI DESCHISE"
         onBack={() => navigation.goBack()}
         right={
           orders.length > 0 ? (
@@ -258,7 +266,7 @@ export default function PickScanScreen({ navigation }) {
               <View style={styles.openOrdersHeader}>
                 <View>
                   <Text style={styles.sectionTitle}>COMENZI DESCHISE</Text>
-                  <Text style={styles.sectionHint}>Apasă o comandă pentru a o selecta.</Text>
+                  <Text style={styles.sectionHint}>Selectează o comandă sau redeschide colectarea începută.</Text>
                 </View>
                 <View style={styles.totalBadge}>
                   <Text style={styles.totalBadgeText}>{openOrdersTotal}</Text>
@@ -274,10 +282,7 @@ export default function PickScanScreen({ navigation }) {
             </>
           )}
           ListEmptyComponent={openOrdersLoading ? (
-            <View style={styles.listLoading}>
-              <ActivityIndicator size="large" color={colors.accentRed} />
-              <Text style={styles.listLoadingText}>Se încarcă comenzile...</Text>
-            </View>
+            <OrderListSkeleton count={5} />
           ) : !openOrdersError ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>NU EXISTĂ COMENZI DESCHISE</Text>
@@ -318,7 +323,7 @@ export default function PickScanScreen({ navigation }) {
                       selected && styles.orderStateTextSelected,
                       busy && styles.orderStateTextBusy,
                     ]}>
-                      {busy ? 'ÎN COLECTARE' : selected ? 'SELECTATĂ' : 'DESCHIDE'}
+                      {busy ? 'REDESCHIDE' : selected ? 'SELECTATĂ' : 'SELECTEAZĂ'}
                     </Text>
                   </View>
                   {busy && (
@@ -398,8 +403,6 @@ const styles = StyleSheet.create({
   },
   inlineErrorText: { color: colors.danger, fontSize: 13 },
   retryText: { color: colors.accentRed, fontFamily: fonts.mono, fontWeight: '700', fontSize: 11, marginTop: 6 },
-  listLoading: { paddingVertical: 40, alignItems: 'center' },
-  listLoadingText: { color: colors.textMuted, marginTop: 12 },
   emptyState: {
     padding: 28, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder,
     borderRadius: radii.card, backgroundColor: colors.cardBg,
@@ -430,6 +433,4 @@ const styles = StyleSheet.create({
   orderStateTextSelected: { color: '#ffffff' },
   orderStateTextBusy: { color: colors.warning },
   batchText: { fontSize: 10, color: colors.textMuted, marginTop: 5 },
-  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 32 },
-  loadingText: { fontFamily: fonts.mono, fontSize: 14, color: colors.textMuted, marginTop: 16, textAlign: 'center' },
 });
