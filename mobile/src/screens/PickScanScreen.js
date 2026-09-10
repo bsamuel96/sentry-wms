@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Text from '../components/LocalizedText';
@@ -13,7 +13,7 @@ import { BusySkeleton, OrderListSkeleton } from '../components/LoadingSkeleton';
 import { canResumeAssignedBatch } from '../utils/pickingAccess';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
-export default function PickScanScreen({ navigation }) {
+export default function PickScanScreen({ navigation, route }) {
   const { warehouseId, user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [openOrders, setOpenOrders] = useState([]);
@@ -100,6 +100,13 @@ export default function PickScanScreen({ navigation }) {
       }
     }
   };
+
+  useEffect(() => {
+    const barcode = route?.params?.so_number;
+    if (barcode) handleScan(barcode);
+    // The navigation parameter is a one-shot scanner hand-off.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const removeOrder = (so_id) => {
     setOrders((prev) => prev.filter((o) => o.so_id !== so_id));

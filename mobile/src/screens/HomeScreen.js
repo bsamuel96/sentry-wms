@@ -56,6 +56,23 @@ export default function HomeScreen({ navigation }) {
   const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
   const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', confirmDestructive: false });
 
+  const applyDashboardStats = useCallback((stats = {}) => {
+    setBadges({
+      receive: stats.pending_receipts || 0,
+      putaway: stats.items_awaiting_putaway || 0,
+      pick: stats.open_sos || 0,
+      pack: stats.ready_to_pack || 0,
+      ship: stats.ready_to_ship || 0,
+      count: 0,
+    });
+  }, []);
+
+  const loadDashboard = useCallback(async () => {
+    if (!warehouseId) return;
+    const dashResp = await client.get(`/api/admin/dashboard?warehouse_id=${warehouseId}`);
+    applyDashboardStats(dashResp.data);
+  }, [warehouseId, applyDashboardStats]);
+
   // On first load after login, if no warehouse is set, fetch the list and
   // either auto-select (single warehouse) or show a blocking picker.
   useEffect(() => {
@@ -97,17 +114,7 @@ export default function HomeScreen({ navigation }) {
       setAllowedFunctions(meResp.data.allowed_functions || []);
       setRequirePacking(meResp.data.require_packing !== false);
 
-      const stats = dashResp.data;
-      setBadges({
-        receive: stats.pending_receipts || 0,
-        putaway: stats.items_awaiting_putaway || 0,
-        // The card opens the complete OPEN worklist, including a batch that
-        // has already started and can now be resumed from that same list.
-        pick: stats.open_sos || 0,
-        pack: stats.ready_to_pack || 0,
-        ship: stats.ready_to_ship || 0,
-        count: 0,
-      });
+      applyDashboardStats(dashResp.data);
 
       const whList = whResp.data.warehouses || [];
       setWarehouses(whList);
@@ -121,16 +128,45 @@ export default function HomeScreen({ navigation }) {
     } finally {
       setInitialLoading(false);
     }
-  }, [warehouseId]);
+  }, [warehouseId, applyDashboardStats]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
       getStoredApiUrl().then(setServerUrl);
-      const timer = setInterval(loadData, 10000);
+      // Permissions and warehouse metadata rarely change. Refresh only the
+      // lightweight work counters in the background.
+      const timer = setInterval(() => loadDashboard().catch(() => {}), 5000);
       return () => clearInterval(timer);
-    }, [loadData])
+    }, [loadData, loadDashboard])
   );
+
+  const openSalesOrder = async (encoded) => {
+    try {
+      const soResp = await client.get(`/api/lookup/so/${encoded}`);
+      if (!soResp.data?.sales_order) return false;
+      const so = soResp.data.sales_order;
+      if (so.status === 'PACKED') {
+        navigation.navigate('Ship', { so_number: so.so_barcode || so.so_number });
+        return true;
+      }
+      if (so.status === 'PICKED') {
+        navigation.navigate(requirePacking ? 'Pack' : 'Ship', {
+          so_number: so.so_barcode || so.so_number,
+        });
+        return true;
+      }
+      if (so.status === 'OPEN') {
+        navigation.navigate('PickScan', { so_number: so.so_barcode || so.so_number });
+        return true;
+      }
+      const infoLines = [so.customer_name, so.customer_phone, `Status: ${so.status}`].filter(Boolean);
+      setInfoModal({ visible: true, title: so.so_number, message: infoLines.join('\n') });
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const handleScan = async (barcode) => {
     const cleaned = barcode.replace(/[\r\n\s]+/g, '').trim();
@@ -147,6 +183,13 @@ export default function HomeScreen({ navigation }) {
     }
 
     const encoded = encodeURIComponent(cleaned);
+
+    // Autosav order tickets have a stable ASV- prefix. Route them directly
+    // instead of waiting for three guaranteed-miss item/bin/PO lookups.
+    if (cleaned.toUpperCase().startsWith('ASV-')) {
+      if (!await openSalesOrder(encoded)) showError('Comanda nu a fost găsită');
+      return;
+    }
 
     // Try item lookup (UPC or SKU)
     try {
@@ -190,27 +233,8 @@ export default function HomeScreen({ navigation }) {
       // Not a PO
     }
 
-    // Try SO lookup  -  generic first to check status, then route appropriately
-    try {
-      const soResp = await client.get(`/api/lookup/so/${encoded}`);
-      if (soResp.data && soResp.data.sales_order) {
-        const so = soResp.data.sales_order;
-        if (so.status === 'PACKED') {
-          navigation.navigate('Ship', { so_number: so.so_number });
-          return;
-        }
-        if (so.status === 'PICKED') {
-          navigation.navigate('Ship', { so_number: so.so_number });
-          return;
-        }
-        // SO exists but not in actionable status  -  show info
-        const infoLines = [so.customer_name, so.customer_phone, `Status: ${so.status}`].filter(Boolean);
-        setInfoModal({ visible: true, title: so.so_number, message: infoLines.join('\n') });
-        return;
-      }
-    } catch {
-      // Not an SO
-    }
+    // Last generic fallback for legacy sales-order barcodes without ASV-.
+    if (await openSalesOrder(encoded)) return;
 
     showError('Barcode not recognized');
   };

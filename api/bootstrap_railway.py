@@ -37,6 +37,23 @@ def _schema_is_initialized(cursor) -> bool:
     return bool(cursor.fetchone()[0])
 
 
+def _ensure_runtime_indexes(cursor) -> None:
+    """Apply small idempotent indexes needed by current runtime worklists.
+
+    Railway's database bootstrap intentionally skips the full schema on an
+    existing installation, so additive performance indexes must still be
+    ensured during deploy.
+    """
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_sales_orders_mobile_worklists
+            ON sales_orders (
+                warehouse_id, status, packed_at, picked_at, created_at, so_id
+            )
+        """
+    )
+
+
 def _seed_minimal_install(cursor, admin_password: str) -> None:
     cursor.execute(
         """
@@ -151,11 +168,13 @@ def main() -> None:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", (BOOTSTRAP_LOCK_ID,))
                 if _schema_is_initialized(cursor):
-                    print("Sentry WMS database is already initialized; skipping bootstrap.")
+                    _ensure_runtime_indexes(cursor)
+                    print("Sentry WMS database is already initialized; runtime indexes verified.")
                     return
 
                 cursor.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
                 _seed_minimal_install(cursor, admin_password)
+                _ensure_runtime_indexes(cursor)
                 print("Sentry WMS schema and minimal admin setup initialized.")
     finally:
         connection.close()

@@ -26,29 +26,33 @@ export default function PackScreen({ navigation, route }) {
   const [readyOrdersTotal, setReadyOrdersTotal] = useState(0);
   const [readyOrdersLoading, setReadyOrdersLoading] = useState(false);
   const [readyOrdersError, setReadyOrdersError] = useState('');
+  const readyOrdersRequestRef = React.useRef(null);
 
-  const loadReadyOrders = useCallback(async () => {
-    if (!warehouseId) return;
-    setReadyOrdersLoading(true);
+  const loadReadyOrders = useCallback(({ silent = false } = {}) => {
+    if (!warehouseId) return Promise.resolve();
+    if (readyOrdersRequestRef.current) return readyOrdersRequestRef.current;
+    if (!silent) setReadyOrdersLoading(true);
     setReadyOrdersError('');
-    try {
-      const resp = await client.get(
-        `/api/packing/ready-orders?warehouse_id=${encodeURIComponent(warehouseId)}&limit=500`,
-      );
+    const request = client.get(
+      `/api/packing/ready-orders?warehouse_id=${encodeURIComponent(warehouseId)}&limit=500`,
+    ).then((resp) => {
       setReadyOrders(resp.data.orders || []);
       setReadyOrdersTotal(resp.data.total || 0);
-    } catch (err) {
+    }).catch((err) => {
       setReadyOrdersError(err.response?.data?.error || 'Lista comenzilor de ambalat nu a putut fi încărcată.');
-    } finally {
+    }).finally(() => {
+      readyOrdersRequestRef.current = null;
       setReadyOrdersLoading(false);
-    }
+    });
+    readyOrdersRequestRef.current = request;
+    return request;
   }, [warehouseId]);
 
   useFocusEffect(
     useCallback(() => {
       if (phase !== 'scan_order') return undefined;
       loadReadyOrders();
-      const timer = setInterval(loadReadyOrders, 10000);
+      const timer = setInterval(() => loadReadyOrders({ silent: true }), 5000);
       return () => clearInterval(timer);
     }, [phase, loadReadyOrders]),
   );

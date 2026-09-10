@@ -769,6 +769,8 @@ CREATE INDEX ix_purchase_orders_warehouse ON purchase_orders(warehouse_id);
 -- (see mig 078).
 CREATE INDEX ix_purchase_order_lines_po_item ON purchase_order_lines(po_id, item_id);
 CREATE INDEX ix_sales_orders_warehouse ON sales_orders(warehouse_id);
+CREATE INDEX IF NOT EXISTS ix_sales_orders_mobile_worklists
+    ON sales_orders (warehouse_id, status, packed_at, picked_at, created_at, so_id);
 CREATE INDEX ix_sales_order_lines_so ON sales_order_lines(so_id);
 -- mig 062: partial index because POS-created
 -- and admin-created SOs leave source_system NULL.
