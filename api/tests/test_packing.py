@@ -67,6 +67,34 @@ class TestLoadOrder:
         assert "not ready" in resp.get_json()["error"].lower()
 
 
+class TestReadyOrders:
+    def test_ready_orders_lists_picked_orders_with_counts(self, client, auth_headers):
+        _advance_so_to_picked(client, auth_headers, ["SO-2026-001"])
+
+        resp = client.get(
+            "/api/packing/ready-orders?warehouse_id=1&limit=500",
+            headers=auth_headers,
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        order = next(row for row in data["orders"] if row["so_number"] == "SO-2026-001")
+        assert order["status"] == "PICKED"
+        assert order["line_count"] == 1
+        assert order["unit_count"] == 2
+        assert order["packed_unit_count"] == 0
+        assert data["total"] >= 1
+
+    def test_ready_orders_requires_warehouse(self, client, auth_headers):
+        resp = client.get("/api/packing/ready-orders", headers=auth_headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "warehouse_id is required"
+
+    def test_ready_orders_requires_auth(self, client):
+        resp = client.get("/api/packing/ready-orders?warehouse_id=1")
+        assert resp.status_code == 401
+
+
 class TestVerifyItem:
     def test_verify_item_success(self, client, auth_headers):
         _advance_so_to_picked(client, auth_headers, ["SO-2026-001"])

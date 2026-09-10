@@ -142,6 +142,7 @@ def lookup_bin(barcode):
 
     bin_data = {
         "bin_id": bin_row.bin_id,
+        "warehouse_id": bin_row.warehouse_id,
         "bin_code": bin_row.bin_code,
         "bin_barcode": bin_row.bin_barcode,
         "bin_type": bin_row.bin_type,

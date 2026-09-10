@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
 import { BusySkeleton, OrderListSkeleton } from '../components/LoadingSkeleton';
+import { canResumeAssignedBatch } from '../utils/pickingAccess';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
 export default function PickScanScreen({ navigation }) {
@@ -106,8 +107,7 @@ export default function PickScanScreen({ navigation }) {
 
   const handleOrderPress = (order) => {
     if (order.active_batch_id) {
-      if (order.active_batch_assigned_to
-          && order.active_batch_assigned_to !== user?.username) {
+      if (!canResumeAssignedBatch(order, user)) {
         showError(`Comanda este în colectare la ${order.active_batch_assigned_to}.`);
         return;
       }

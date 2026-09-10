@@ -36,6 +36,7 @@ class TestBinLookup:
         data = resp.get_json()
         assert data["bin"]["bin_code"] == "A-01-01"
         assert data["bin"]["bin_type"] == "Pickable"
+        assert data["bin"]["warehouse_id"] == 1
         assert len(data["items"]) >= 1, "Bin A-01-01 should contain items"
 
     def test_lookup_bin_not_found(self, client, auth_headers):

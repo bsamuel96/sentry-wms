@@ -39,6 +39,7 @@ export default function ReceiveScreen({ navigation, route }) {
   const [linePage, setLinePage] = useState(0);
   const [activeItem, setActiveItem] = useState(null);
   const [quantity, setQuantity] = useState('');
+  const [destinationBin, setDestinationBin] = useState(null);
   const [mode, setMode] = useState('standard');
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [turboStatus, setTurboStatus] = useState('');
@@ -123,6 +124,9 @@ export default function ReceiveScreen({ navigation, route }) {
 
   const changeMode = (newMode) => {
     setMode(newMode);
+    setActiveItem(null);
+    setDestinationBin(null);
+    setQuantity('');
     setShowModeMenu(false);
     AsyncStorage.setItem(MODE_KEY, newMode).catch(() => {});
   };
@@ -158,6 +162,7 @@ export default function ReceiveScreen({ navigation, route }) {
           setLines(poLines);
           setLinePage(0);
           setActiveItem(null);
+          setDestinationBin(null);
           setTurboStatus('');
           setCurrentPoIndex(0);
           setPhase('receiving');
@@ -200,6 +205,7 @@ export default function ReceiveScreen({ navigation, route }) {
       setLines(resp.data.lines || []);
       setLinePage(0);
       setActiveItem(null);
+      setDestinationBin(null);
       setTurboStatus('');
       resetReceives();
       setCurrentPoIndex(index);
@@ -246,24 +252,57 @@ export default function ReceiveScreen({ navigation, route }) {
           message: `${match.sku} is already fully received (${match.quantity_received}/${match.quantity_ordered}). Over-receive?`,
           confirmText: 'Continue',
           cancelText: 'Cancel',
-          onConfirm: () => { setConfirmModal((p) => ({ ...p, visible: false })); setActiveItem(match); setQuantity('1'); },
+          onConfirm: () => {
+            setConfirmModal((p) => ({ ...p, visible: false }));
+            setActiveItem(match);
+            setDestinationBin(null);
+            setQuantity('1');
+          },
         });
         return;
       }
       // Already warned  -  allow silently
       setActiveItem(match);
+      setDestinationBin(null);
       setQuantity('1');
       return;
     }
     setActiveItem(match);
+    setDestinationBin(null);
     setQuantity(String(remaining));
   };
 
+  const handleScanDestination = async (barcode) => {
+    try {
+      const resp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
+      const bin = resp.data?.bin;
+      if (!bin) {
+        showError('Bin not found');
+        return;
+      }
+      if (Number(bin.warehouse_id) !== Number(warehouseId)) {
+        showError('Locația scanată aparține altui depozit.');
+        return;
+      }
+      if (bin.bin_type !== 'Pickable') {
+        showError(`${bin.bin_code} nu este o locație finală de stocare.`);
+        return;
+      }
+      setDestinationBin(bin);
+    } catch (err) {
+      showError(err.response?.data?.error || 'Bin not found');
+    }
+  };
+
   const doReceiveStandard = async (qty) => {
+    if (!destinationBin?.bin_id) {
+      showError('Scanează locația în care depozitezi produsul.');
+      return;
+    }
     try {
       const resp = await client.post('/api/receiving/receive', {
         po_id: po.po_id,
-        items: [{ item_id: activeItem.item_id, quantity: qty, bin_id: receivingBinId || activeItem.staging_bin_id || 1 }],
+        items: [{ item_id: activeItem.item_id, quantity: qty, bin_id: destinationBin.bin_id }],
         warehouse_id: warehouseId,
       });
 
@@ -274,6 +313,7 @@ export default function ReceiveScreen({ navigation, route }) {
 
       await refreshPO();
       setActiveItem(null);
+      setDestinationBin(null);
       setQuantity('');
     } catch (err) {
       showError(err.response?.data?.error || 'Failed to receive');
@@ -433,6 +473,7 @@ export default function ReceiveScreen({ navigation, route }) {
     setLines([]);
     setLinePage(0);
     setActiveItem(null);
+    setDestinationBin(null);
     setCurrentPoIndex(0);
     setTurboStatus('');
     resetReceives();
@@ -524,7 +565,7 @@ export default function ReceiveScreen({ navigation, route }) {
                   <Text style={styles.modeBadgeText}>{mode === 'turbo' ? 'TURBO' : 'STANDARD'}</Text>
                 </View>
               </View>
-              {receivingBinCode ? (
+              {mode === 'turbo' && receivingBinCode ? (
                 <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
                   {'\u2192'} {receivingBinCode}
                 </Text>
@@ -543,12 +584,14 @@ export default function ReceiveScreen({ navigation, route }) {
               </View>
             ) : (
               <>
-                <ScanInput
-                  placeholder="SCAN ITEM"
-                  onScan={handleScanItem}
-                  disabled={scanDisabled || (mode === 'standard' && !!activeItem)}
-                  suppressRefocus={qtyFocused}
-                />
+                {(mode === 'turbo' || !activeItem) && (
+                  <ScanInput
+                    placeholder={mode === 'standard' ? 'SCANEAZĂ EAN-UL PRODUSULUI' : 'SCAN ITEM'}
+                    onScan={handleScanItem}
+                    disabled={scanDisabled}
+                    suppressRefocus={qtyFocused}
+                  />
+                )}
 
                 {mode === 'turbo' && (turboStatus !== '' || pendingTotal > 0) && (
                   <View style={styles.turboCard}>
@@ -561,7 +604,20 @@ export default function ReceiveScreen({ navigation, route }) {
 
                 {mode === 'standard' && activeItem && (
                   <View style={styles.receiveCard}>
-                    <Text style={listStyles.sku}>{activeItem.sku}</Text>
+                    <View style={styles.receiveCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.stepDone}>1 · EAN SCANAT</Text>
+                        <Text style={listStyles.sku}>{activeItem.sku}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.clearItemButton}
+                        onPress={() => { setActiveItem(null); setDestinationBin(null); setQuantity(''); }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Schimbă produsul"
+                      >
+                        <Text style={styles.clearItemText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
                     <Text style={[listStyles.itemName, { fontSize: 13 }]}>{activeItem.item_name}</Text>
                     <Text style={styles.expectedText}>
                       Expected: {activeItem.quantity_ordered} | Received: {activeItem.quantity_received}
@@ -578,8 +634,34 @@ export default function ReceiveScreen({ navigation, route }) {
                         onBlur={() => setQtyFocused(false)}
                       />
                     </View>
-                    <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={handleConfirmStandard}>
-                      <Text style={buttonStyles.buttonPrimaryText}>RECEIVE</Text>
+                    <Text style={styles.destinationLabel}>2 · SCANEAZĂ LOCUL ÎN CARE DEPOZITEZI</Text>
+                    {!destinationBin ? (
+                      <ScanInput
+                        placeholder="SCAN DESTINATION BIN"
+                        onScan={handleScanDestination}
+                        disabled={scanDisabled}
+                        suppressRefocus={qtyFocused}
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.destinationSelected}
+                        onPress={() => setDestinationBin(null)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Locația ${destinationBin.bin_code}. Apasă pentru schimbare.`}
+                      >
+                        <View>
+                          <Text style={styles.destinationSelectedHint}>LOCAȚIE SELECTATĂ</Text>
+                          <Text style={styles.destinationSelectedCode}>{destinationBin.bin_code}</Text>
+                        </View>
+                        <Text style={styles.destinationChange}>SCHIMBĂ</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[buttonStyles.buttonPrimary, { width: '100%' }, !destinationBin && buttonStyles.buttonDisabled]}
+                      onPress={handleConfirmStandard}
+                      disabled={!destinationBin}
+                    >
+                      <Text style={buttonStyles.buttonPrimaryText}>CONFIRMĂ RECEPȚIA</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -654,9 +736,11 @@ export default function ReceiveScreen({ navigation, route }) {
         title="RECEIVE MODE"
         mode={mode}
         onChangeMode={changeMode}
-        standardDesc="Scan item, enter qty, confirm"
+        standardDesc="Scanează EAN, cantitatea și locația finală"
         turboDesc="Each scan = 1 unit received"
       >
+        {mode === 'turbo' && (
+        <>
         <View style={{ height: 1, backgroundColor: colors.cardBorder, marginVertical: 8 }} />
         <Text style={styles.modeTitle}>RECEIVING BIN</Text>
         <TouchableOpacity
@@ -666,6 +750,8 @@ export default function ReceiveScreen({ navigation, route }) {
           <Text style={styles.modeOptionLabel}>{receivingBinCode || 'Not Set'}</Text>
           <Text style={styles.modeOptionDesc}>Tap to change destination bin</Text>
         </TouchableOpacity>
+        </>
+        )}
       </ModeSelector>
 
       {/* Bin picker modal */}
@@ -792,8 +878,27 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.accentRed, borderRadius: radii.card,
     padding: 12, marginBottom: 10,
   },
+  receiveCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  stepDone: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.success, marginBottom: 4 },
+  clearItemButton: {
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: colors.inputBorder,
+  },
+  clearItemText: { fontSize: 25, lineHeight: 27, color: colors.accentRed },
   expectedText: { fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted, marginTop: 6 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 12 },
+  destinationLabel: {
+    fontFamily: fonts.mono, fontSize: 11, fontWeight: '800', color: colors.accentRed,
+    letterSpacing: 0.35, marginBottom: 8,
+  },
+  destinationSelected: {
+    minHeight: 64, paddingHorizontal: 14, marginBottom: 12, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5,
+    borderColor: colors.success, borderRadius: radii.card, backgroundColor: '#f0fdf4',
+  },
+  destinationSelectedHint: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '700', color: colors.success },
+  destinationSelectedCode: { fontFamily: fonts.mono, fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginTop: 2 },
+  destinationChange: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.accentRed },
   lineQty: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   lineQtyPending: { color: colors.copper },
   lineRowDone: { borderColor: colors.success },
