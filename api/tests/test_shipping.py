@@ -80,6 +80,48 @@ def _advance_so_to_packed(client, auth_headers, so_number="SO-2026-001"):
 # ── Shipping Order Lookup ────────────────────────────────────────────────────
 
 
+class TestShippingReadyOrders:
+    def test_lists_packed_orders_when_packing_is_required(self, client, auth_headers):
+        _set_setting("require_packing_before_shipping", "true")
+        _advance_so_to_packed(client, auth_headers, "SO-2026-001")
+
+        resp = client.get(
+            "/api/shipping/ready-orders?warehouse_id=1&limit=500",
+            headers=auth_headers,
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        order = next(row for row in data["orders"] if row["so_number"] == "SO-2026-001")
+        assert data["packing_required"] is True
+        assert order["status"] == "PACKED"
+        assert order["line_count"] == 1
+        assert order["unit_count"] == 2
+
+    def test_lists_picked_orders_when_packing_is_disabled(self, client, auth_headers):
+        _set_setting("require_packing_before_shipping", "false")
+        _advance_so_to_picked(client, auth_headers, "SO-2026-001")
+
+        resp = client.get(
+            "/api/shipping/ready-orders?warehouse_id=1",
+            headers=auth_headers,
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["packing_required"] is False
+        assert any(row["so_number"] == "SO-2026-001" for row in data["orders"])
+
+    def test_requires_warehouse(self, client, auth_headers):
+        resp = client.get("/api/shipping/ready-orders", headers=auth_headers)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "warehouse_id is required"
+
+    def test_requires_auth(self, client):
+        resp = client.get("/api/shipping/ready-orders?warehouse_id=1")
+        assert resp.status_code == 401
+
+
 class TestShippingOrderLookup:
     def test_lookup_packed_order(self, client, auth_headers):
         so_id = _advance_so_to_packed(client, auth_headers, "SO-2026-001")

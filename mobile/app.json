@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sentry WMS",
     "slug": "sentry-wms",
-    "version": "1.41.0",
+    "version": "1.41.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +22,7 @@
         "backgroundColor": "#0b63d6"
       },
       "package": "ro.autosavcar.sentrywms",
-      "versionCode": 21,
+      "versionCode": 22,
       "permissions": [
         "INTERNET",
         "VIBRATE",

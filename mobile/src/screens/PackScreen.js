@@ -260,16 +260,7 @@ export default function PackScreen({ navigation, route }) {
                     <Text style={[styles.itemQtyText, complete && styles.itemQtyComplete]}>
                       {done}/{expected}
                     </Text>
-                    {complete ? (
-                      <Text style={styles.checkIcon}>&#10003;</Text>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.manualPackBtn}
-                        onPress={() => handleScanItem(item.upc || item.sku)}
-                      >
-                        <Text style={styles.manualPackText}>PACK</Text>
-                      </TouchableOpacity>
-                    )}
+                    {complete && <Text style={styles.checkIcon}>&#10003;</Text>}
                   </View>
                 </View>
               );
@@ -408,10 +399,4 @@ const styles = StyleSheet.create({
   detailItemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingLeft: 8 },
   detailItemSku: { fontFamily: fonts.mono, fontSize: 12, color: colors.textPrimary },
   detailItemQty: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accentRed },
-  manualPackBtn: {
-    backgroundColor: colors.accentRed, borderRadius: radii.badge,
-    paddingHorizontal: 10, paddingVertical: 4, minHeight: 28,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  manualPackText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },
 });

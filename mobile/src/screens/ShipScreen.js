@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useScrollToTop } from '@react-navigation/native';
-import { View, TouchableOpacity, ScrollView, Modal, Pressable, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect, useScrollToTop } from '@react-navigation/native';
+import { View, TouchableOpacity, ScrollView, FlatList, Modal, Pressable, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ScreenHeader from '../components/ScreenHeader';
 import ErrorPopup from '../components/ErrorPopup';
-import { BusySkeleton } from '../components/LoadingSkeleton';
+import { BusySkeleton, OrderListSkeleton } from '../components/LoadingSkeleton';
 import useScreenError from '../hooks/useScreenError';
+import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles } from '../theme/styles';
 
 export default function ShipScreen({ navigation, route }) {
+  const { warehouseId } = useAuth();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [order, setOrder] = useState(null);
@@ -25,8 +27,38 @@ export default function ShipScreen({ navigation, route }) {
   const [showSODetail, setShowSODetail] = useState(false);
   const [soDetail, setSODetail] = useState(null);
   const [busyMessage, setBusyMessage] = useState('');
+  const [readyOrders, setReadyOrders] = useState([]);
+  const [readyOrdersTotal, setReadyOrdersTotal] = useState(0);
+  const [readyOrdersLoading, setReadyOrdersLoading] = useState(false);
+  const [readyOrdersError, setReadyOrdersError] = useState('');
 
   const CARRIERS = ['UPS', 'FedEx', 'USPS', 'DHL', 'Amazon', 'Other'];
+
+  const loadReadyOrders = useCallback(async () => {
+    if (!warehouseId) return;
+    setReadyOrdersLoading(true);
+    setReadyOrdersError('');
+    try {
+      const resp = await client.get(
+        `/api/shipping/ready-orders?warehouse_id=${encodeURIComponent(warehouseId)}&limit=500`,
+      );
+      setReadyOrders(resp.data.orders || []);
+      setReadyOrdersTotal(resp.data.total || 0);
+    } catch (err) {
+      setReadyOrdersError(err.response?.data?.error || 'Lista comenzilor de expediat nu a putut fi încărcată.');
+    } finally {
+      setReadyOrdersLoading(false);
+    }
+  }, [warehouseId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (phase !== 'scan_order') return undefined;
+      loadReadyOrders();
+      const timer = setInterval(loadReadyOrders, 10000);
+      return () => clearInterval(timer);
+    }, [phase, loadReadyOrders]),
+  );
 
   // Auto-load SO if navigated from home screen scan
   useEffect(() => {
@@ -99,13 +131,74 @@ export default function ShipScreen({ navigation, route }) {
 
   return (
     <View style={screenStyles.screen}>
-      <ScreenHeader title="SHIP" onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title={phase === 'scan_order' ? 'COMENZI DE EXPEDIAT' : 'SHIP'}
+        onBack={() => navigation.goBack()}
+      />
 
+      {phase === 'scan_order' && (
+        <FlatList
+          ref={scrollRef}
+          style={screenStyles.content}
+          data={readyOrders}
+          keyExtractor={(entry) => String(entry.so_id)}
+          contentContainerStyle={styles.listContent}
+          refreshing={readyOrdersLoading}
+          onRefresh={loadReadyOrders}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={(
+            <>
+              <ScanInput placeholder="SCAN ORDER" onScan={handleScanOrder} disabled={scanDisabled} />
+              <View style={styles.readyHeader}>
+                <View style={styles.readyHeaderCopy}>
+                  <Text style={styles.sectionTitle}>COMENZI DE EXPEDIAT</Text>
+                  <Text style={styles.sectionHint}>Apasă o comandă sau scanează eticheta ei.</Text>
+                </View>
+                <View style={styles.totalBadge}>
+                  <Text style={styles.totalBadgeText}>{readyOrdersTotal}</Text>
+                </View>
+              </View>
+              {!!readyOrdersError && (
+                <TouchableOpacity style={styles.inlineError} onPress={loadReadyOrders}>
+                  <Text style={styles.inlineErrorText}>{readyOrdersError}</Text>
+                  <Text style={styles.retryText}>APASĂ PENTRU REÎNCERCARE</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+          ListEmptyComponent={readyOrdersLoading ? (
+            <OrderListSkeleton count={5} />
+          ) : !readyOrdersError ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>NU EXISTĂ COMENZI DE EXPEDIAT</Text>
+              <Text style={styles.emptyText}>Trage în jos pentru actualizare.</Text>
+            </View>
+          ) : null}
+          renderItem={({ item: entry }) => (
+            <TouchableOpacity
+              style={styles.readyOrderRow}
+              onPress={() => handleScanOrder(entry.so_barcode || entry.so_number)}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+              accessibilityLabel={`Deschide comanda ${entry.so_number} pentru expediere`}
+            >
+              <View style={styles.orderMain}>
+                <Text style={styles.readySoNumber}>{entry.so_number}</Text>
+                <Text style={styles.readyCustomer}>{entry.customer_name || 'Client nespecificat'}</Text>
+                <Text style={styles.readyMeta}>
+                  {entry.line_count} poziții · {entry.unit_count} bucăți
+                </Text>
+              </View>
+              <View style={styles.openBadge}>
+                <Text style={styles.openBadgeText}>DESCHIDE</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
+      {phase !== 'scan_order' && (
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
-        {phase === 'scan_order' && (
-          <ScanInput placeholder="SCAN ORDER" onScan={handleScanOrder} disabled={scanDisabled} />
-        )}
-
         {phase === 'shipping' && (
           <>
             <TouchableOpacity style={styles.orderInfo} onPress={showOrderDetail} activeOpacity={0.7}>
@@ -183,6 +276,7 @@ export default function ShipScreen({ navigation, route }) {
           </View>
         )}
       </ScrollView>
+      )}
 
       <Modal visible={showCarrierPicker} transparent animationType="fade">
         <Pressable style={styles.pickerOverlay} onPress={() => setShowCarrierPicker(false)}>
@@ -254,6 +348,46 @@ export default function ShipScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  listContent: { padding: 16, paddingBottom: 24 },
+  readyHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 20, marginBottom: 10,
+  },
+  readyHeaderCopy: { flex: 1, paddingRight: 12 },
+  sectionTitle: { fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  sectionHint: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  totalBadge: {
+    minWidth: 36, height: 36, paddingHorizontal: 8, borderRadius: 18,
+    backgroundColor: '#eaf3ff', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.inputBorder,
+  },
+  totalBadgeText: { fontFamily: fonts.mono, color: colors.accentRed, fontWeight: '700' },
+  inlineError: {
+    padding: 14, borderRadius: radii.card, borderWidth: 1, borderColor: '#fecaca',
+    backgroundColor: '#fff7f7', marginBottom: 10,
+  },
+  inlineErrorText: { color: colors.danger, fontSize: 13 },
+  retryText: { color: colors.accentRed, fontFamily: fonts.mono, fontWeight: '700', fontSize: 11, marginTop: 6 },
+  emptyState: {
+    padding: 28, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: radii.card, backgroundColor: colors.cardBg,
+  },
+  emptyTitle: { fontFamily: fonts.mono, fontWeight: '700', color: colors.textPrimary, fontSize: 14 },
+  emptyText: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
+  readyOrderRow: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 92, padding: 14,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: radii.card, marginBottom: 9,
+  },
+  orderMain: { flex: 1, paddingRight: 10 },
+  readySoNumber: { fontFamily: fonts.mono, fontSize: 17, lineHeight: 22, fontWeight: '800', color: colors.accentRed },
+  readyCustomer: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginTop: 4 },
+  readyMeta: { fontSize: 12, color: colors.textMuted, marginTop: 5 },
+  openBadge: {
+    minHeight: 36, paddingHorizontal: 11, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: colors.inputBorder,
+  },
+  openBadgeText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', color: colors.accentRed },
   orderInfo: { marginBottom: 16 },
   soNumber: { fontFamily: fonts.mono, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
   customer: { fontSize: 13, color: colors.textMuted, marginTop: 2 },

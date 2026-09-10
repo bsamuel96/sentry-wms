@@ -5,7 +5,7 @@ Shipping / fulfillment endpoint: records tracking info and creates fulfillment r
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import text
 
-from middleware.auth_middleware import require_auth, warehouse_scope_clause
+from middleware.auth_middleware import require_auth, check_warehouse_access, warehouse_scope_clause
 from middleware.db import with_db
 from schemas.shipping import FulfillRequest
 from services.shipping_service import record_ship, require_packing_before_shipping
@@ -18,6 +18,87 @@ shipping_bp = Blueprint("shipping", __name__)
 def _require_packing(db):
     """Check if packing is required before shipping."""
     return require_packing_before_shipping(db)
+
+
+@shipping_bp.route("/ready-orders")
+@require_auth
+@with_db
+def ready_orders():
+    """Return the selected warehouse's orders that can be shipped now."""
+    warehouse_id = request.args.get("warehouse_id", type=int)
+    if not warehouse_id or warehouse_id <= 0:
+        return jsonify({"error": "warehouse_id is required"}), 400
+
+    ok, denied = check_warehouse_access(warehouse_id)
+    if not ok:
+        return denied
+
+    limit = min(max(request.args.get("limit", 200, type=int) or 200, 1), 500)
+    packing_required = _require_packing(g.db)
+    status_filter = "so.status = :so_packed" if packing_required else "so.status IN (:so_picked, :so_packed)"
+    rows = g.db.execute(
+        text(
+            f"""
+            SELECT so.so_id,
+                   so.so_number,
+                   so.so_barcode,
+                   so.customer_name,
+                   so.status,
+                   so.priority,
+                   so.order_date,
+                   so.picked_at,
+                   so.packed_at,
+                   so.created_at,
+                   line_stats.line_count,
+                   line_stats.unit_count,
+                   COUNT(*) OVER () AS total_count
+              FROM sales_orders so
+              JOIN LATERAL (
+                    SELECT COUNT(*)::int AS line_count,
+                           COALESCE(SUM(sol.quantity_picked), 0)::int AS unit_count
+                      FROM sales_order_lines sol
+                     WHERE sol.so_id = so.so_id
+              ) line_stats ON line_stats.line_count > 0
+             WHERE so.warehouse_id = :warehouse_id
+               AND {status_filter}
+               AND COALESCE(so.order_type, 'sale') NOT IN ('return', 'refund')
+             ORDER BY COALESCE(so.packed_at, so.picked_at, so.created_at) ASC NULLS LAST,
+                      so.so_id ASC
+             LIMIT :limit
+            """
+        ),
+        {
+            "warehouse_id": warehouse_id,
+            "so_picked": SO_PICKED,
+            "so_packed": SO_PACKED,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    orders = [
+        {
+            "so_id": row.so_id,
+            "so_number": row.so_number,
+            "so_barcode": row.so_barcode,
+            "customer_name": row.customer_name,
+            "status": row.status,
+            "priority": row.priority,
+            "order_date": row.order_date.isoformat() if row.order_date else None,
+            "picked_at": row.picked_at.isoformat() if row.picked_at else None,
+            "packed_at": row.packed_at.isoformat() if row.packed_at else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "line_count": row.line_count,
+            "unit_count": row.unit_count,
+        }
+        for row in rows
+    ]
+    total = int(rows[0].total_count) if rows else 0
+    return jsonify({
+        "orders": orders,
+        "total": total,
+        "limit": limit,
+        "packing_required": packing_required,
+    })
 
 
 @shipping_bp.route("/order/<barcode>")
