@@ -12,7 +12,7 @@ from middleware.db import with_db
 from routes.admin import VALID_BIN_TYPES, VALID_ZONE_TYPES, admin_bp
 from schemas.bins import CreateBinRequest, UpdateBinRequest
 from schemas.warehouses import CreateWarehouseRequest, InterWarehouseTransferRequest, UpdateWarehouseRequest
-from schemas.zones import CreateZoneRequest, UpdateZoneRequest
+from schemas.zones import CreateZoneRequest, SetupWarehouseAreasRequest, UpdateZoneRequest
 from services.audit_service import write_audit_log
 from services.inventory_service import (
     add_inventory,
@@ -234,6 +234,59 @@ def create_zone(validated):
     g.db.commit()
     return jsonify({"zone_id": row.zone_id, "warehouse_id": row.warehouse_id, "zone_code": row.zone_code,
                     "zone_name": row.zone_name, "zone_type": row.zone_type, "is_active": row.is_active}), 201
+
+
+@admin_bp.route("/zones/area-setup", methods=["POST"])
+@require_auth
+@require_admin_or_page_permission("zones")
+@validate_body(SetupWarehouseAreasRequest)
+@with_db
+def setup_warehouse_areas(validated):
+    """Create or refresh the four physical warehouse areas atomically.
+
+    The operation is intentionally idempotent: rerunning the setup updates the
+    names/types of the same zone codes and never duplicates a zone or moves
+    inventory. Bins can then be assigned to the relevant physical area.
+    """
+    data = validated.model_dump()
+    warehouse_id = data["warehouse_id"]
+    warehouse = g.db.execute(
+        text("SELECT warehouse_id FROM warehouses WHERE warehouse_id = :wid"),
+        {"wid": warehouse_id},
+    ).fetchone()
+    if not warehouse:
+        return jsonify({"error": "Warehouse not found"}), 404
+
+    saved = []
+    for zone in data["zones"]:
+        row = g.db.execute(
+            text("""
+                INSERT INTO zones (warehouse_id, zone_code, zone_name, zone_type, is_active)
+                VALUES (:wid, :code, :name, :type, TRUE)
+                ON CONFLICT (warehouse_id, zone_code) DO UPDATE
+                   SET zone_name = EXCLUDED.zone_name,
+                       zone_type = EXCLUDED.zone_type,
+                       is_active = TRUE
+                RETURNING zone_id, warehouse_id, zone_code, zone_name, zone_type, is_active
+            """),
+            {
+                "wid": warehouse_id,
+                "code": zone["zone_code"],
+                "name": zone["zone_name"],
+                "type": zone["zone_type"],
+            },
+        ).fetchone()
+        saved.append({
+            "zone_id": row.zone_id,
+            "warehouse_id": row.warehouse_id,
+            "zone_code": row.zone_code,
+            "zone_name": row.zone_name,
+            "zone_type": row.zone_type,
+            "is_active": row.is_active,
+        })
+
+    g.db.commit()
+    return jsonify({"zones": saved, "count": len(saved)})
 
 
 @admin_bp.route("/zones/<int:zone_id>", methods=["PUT"])

@@ -117,7 +117,7 @@ describe('Bin create Zone dropdown (issue #99)', () => {
     const selects = getAllByRole('combobox');
     fireEvent.change(selects[0], { target: { value: 'Pickable' } });
     fireEvent.change(selects[1], { target: { value: '2' } });
-    fireEvent.change(getByLabelText('Rând'), { target: { value: 'A' } });
+    fireEvent.change(getByLabelText('Culoar'), { target: { value: 'A' } });
     fireEvent.change(getByLabelText('Raft'), { target: { value: 'a' } });
     fireEvent.change(getByLabelText('Coloană'), { target: { value: '1' } });
     fireEvent.click(getByRole('button', { name: 'Save' }));

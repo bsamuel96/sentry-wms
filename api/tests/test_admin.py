@@ -155,6 +155,40 @@ class TestZones:
         assert resp.status_code == 200
         assert resp.get_json()["zone_name"] == "Updated Receiving"
 
+    def test_setup_exactly_four_warehouse_areas_is_idempotent(self, client, auth_headers):
+        payload = {
+            "warehouse_id": 1,
+            "zones": [
+                {"zone_code": "AREA-R", "zone_name": "Recepție", "zone_type": "RECEIVING"},
+                {"zone_code": "AREA-P", "zone_name": "Stocare", "zone_type": "PICKING"},
+                {"zone_code": "AREA-S", "zone_name": "Expediere", "zone_type": "SHIPPING"},
+                {"zone_code": "AREA-F", "zone_name": "Față", "zone_type": "STORAGE"},
+            ],
+        }
+        first = client.post("/api/admin/zones/area-setup", json=payload, headers=auth_headers)
+        second = client.post("/api/admin/zones/area-setup", json=payload, headers=auth_headers)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.get_json()["count"] == 4
+        assert [zone["zone_code"] for zone in second.get_json()["zones"]] == ["AREA-R", "AREA-P", "AREA-S", "AREA-F"]
+        assert _query_val(
+            "SELECT COUNT(*) FROM zones WHERE warehouse_id = 1 AND zone_code IN ('AREA-R', 'AREA-P', 'AREA-S', 'AREA-F')"
+        ) == 4
+
+    def test_area_setup_requires_four_unique_zones(self, client, auth_headers):
+        resp = client.post("/api/admin/zones/area-setup", json={
+            "warehouse_id": 1,
+            "zones": [
+                {"zone_code": "DUP", "zone_name": "Unu", "zone_type": "STORAGE"},
+                {"zone_code": "DUP", "zone_name": "Doi", "zone_type": "PICKING"},
+                {"zone_code": "THREE", "zone_name": "Trei", "zone_type": "SHIPPING"},
+                {"zone_code": "FOUR", "zone_name": "Patru", "zone_type": "STORAGE"},
+            ],
+        }, headers=auth_headers)
+
+        assert resp.status_code == 400
+
 
 # ── Bins ──────────────────────────────────────────────────────────────────────
 

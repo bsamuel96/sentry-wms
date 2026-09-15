@@ -12,6 +12,13 @@ const FORMATS = [
 ];
 const NATURAL_COLLATOR = new Intl.Collator('ro', { numeric: true, sensitivity: 'base' });
 
+const SCOPE_OPTIONS = [
+  { value: 'zones', label: 'Zone' },
+  { value: 'aisles', label: 'Culoare' },
+  { value: 'shelves', label: 'Rafturi' },
+  { value: 'bins', label: 'Bin-uri' },
+];
+
 function binSearchText(bin) {
   return [
     bin.bin_code,
@@ -25,20 +32,25 @@ function binSearchText(bin) {
   ].filter(Boolean).join(' ').toLocaleLowerCase('ro');
 }
 
-function rowBarcode(aisle) {
-  const safeAisle = String(aisle || '')
+function barcodeSegment(value) {
+  return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9_.\-/]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .toUpperCase();
-  return `ROW-${safeAisle || 'UNKNOWN'}`;
+}
+
+function hierarchyBarcode(prefix, ...parts) {
+  const safeParts = parts.map(barcodeSegment).filter(Boolean);
+  return `${prefix}:${safeParts.join(':') || 'UNKNOWN'}`;
 }
 
 function coordinates(bin) {
   const parts = [];
-  if (bin.aisle) parts.push(`Rând ${bin.aisle}`);
+  if (bin.zone_name) parts.push(bin.zone_name);
+  if (bin.aisle) parts.push(`Culoar ${bin.aisle}`);
   if (bin.row_num) parts.push(`Raft ${bin.row_num}`);
   if (bin.position_num) parts.push(`Coloană ${bin.position_num}`);
   if (bin.level_num) parts.push(`Nivel ${bin.level_num}`);
@@ -66,26 +78,41 @@ function BinLabel({ entry, format, warehouseName }) {
   );
 }
 
-function RowLabel({ entry, format, warehouseName }) {
+function HierarchyLabel({ entry, format, warehouseName, scope }) {
   const compact = format === 'thermal-62';
-  const barcode = rowBarcode(entry.aisle);
+  const config = {
+    zones: {
+      kind: 'ZONĂ DE DEPOZIT',
+      title: entry.zone_name || entry.zone_code,
+      subtitle: `${entry.binCount} ${entry.binCount === 1 ? 'locație' : 'locații'}`,
+    },
+    aisles: {
+      kind: 'CULOAR DE DEPOZIT',
+      title: `CULOAR ${entry.aisle}`,
+      subtitle: [entry.zone_name, `${entry.binCount} ${entry.binCount === 1 ? 'locație' : 'locații'}`].filter(Boolean).join(' · '),
+    },
+    shelves: {
+      kind: 'RAFT DE DEPOZIT',
+      title: `RAFT ${entry.row_num}`,
+      subtitle: [entry.zone_name, entry.aisle ? `Culoar ${entry.aisle}` : '', `${entry.binCount} ${entry.binCount === 1 ? 'locație' : 'locații'}`].filter(Boolean).join(' · '),
+    },
+  }[scope];
+
   return (
-    <article className="warehouse-label warehouse-label-row">
+    <article className={`warehouse-label warehouse-label-${scope}`}>
       <header>
-        <span className="warehouse-label-kind">RÂND DE DEPOZIT</span>
+        <span className="warehouse-label-kind">{config.kind}</span>
         {warehouseName ? <span className="warehouse-label-warehouse">{warehouseName}</span> : null}
       </header>
-      <strong className="warehouse-label-title">RÂND {entry.aisle}</strong>
-      <div className="warehouse-label-coordinates">
-        {entry.binCount} {entry.binCount === 1 ? 'locație' : 'locații'}
-      </div>
+      <strong className="warehouse-label-title">{config.title}</strong>
+      <div className="warehouse-label-coordinates">{config.subtitle}</div>
       <BarcodeSvg
-        value={barcode}
+        value={entry.barcode}
         className="warehouse-label-barcode"
         modulePx={compact ? 0.8 : 1}
         height={compact ? 38 : 52}
       />
-      <span className="warehouse-label-value">{barcode}</span>
+      <span className="warehouse-label-value">{entry.barcode}</span>
     </article>
   );
 }
@@ -93,6 +120,7 @@ function RowLabel({ entry, format, warehouseName }) {
 export default function BinLabels() {
   const { warehouseId, warehouse } = useWarehouse();
   const [bins, setBins] = useState([]);
+  const [zones, setZones] = useState([]);
   const [scope, setScope] = useState('bins');
   const [format, setFormat] = useState('a4');
   const [search, setSearch] = useState('');
@@ -110,6 +138,10 @@ export default function BinLabels() {
       const loaded = [];
 
       try {
+        const zonesResponse = await api.get(`/admin/zones?warehouse_id=${warehouseId}&per_page=1000`);
+        if (!zonesResponse?.ok) throw new Error('Nu am putut încărca zonele depozitului.');
+        const zonesPayload = await zonesResponse.json();
+
         for (let page = 1; page <= 200; page += 1) {
           const params = new URLSearchParams({
             warehouse_id: String(warehouseId),
@@ -126,6 +158,7 @@ export default function BinLabels() {
         if (!cancelled) {
           loaded.sort((left, right) => NATURAL_COLLATOR.compare(left.bin_code || '', right.bin_code || ''));
           setBins(loaded);
+          setZones(zonesPayload.zones || []);
           setSelectedKeys(new Set());
         }
       } catch (loadError) {
@@ -139,33 +172,103 @@ export default function BinLabels() {
     return () => { cancelled = true; };
   }, [warehouseId]);
 
-  const rows = useMemo(() => {
+  const zonesById = useMemo(() => new Map(zones.map((zone) => [zone.zone_id, zone])), [zones]);
+
+  const enrichedBins = useMemo(() => bins.map((bin) => {
+    const zone = zonesById.get(bin.zone_id) || {};
+    return {
+      ...bin,
+      zone_code: bin.zone_code || zone.zone_code || '',
+      zone_name: bin.zone_name || zone.zone_name || '',
+      zone_type: bin.zone_type || zone.zone_type || '',
+    };
+  }), [bins, zonesById]);
+
+  const zoneEntries = useMemo(() => {
+    const counts = new Map();
+    for (const bin of enrichedBins) counts.set(bin.zone_id, (counts.get(bin.zone_id) || 0) + 1);
+    return zones.map((zone) => ({
+      ...zone,
+      key: `zone:${zone.zone_id}`,
+      barcode: hierarchyBarcode('ZONE', zone.zone_code),
+      binCount: counts.get(zone.zone_id) || 0,
+    })).sort((left, right) => NATURAL_COLLATOR.compare(left.zone_code || '', right.zone_code || ''));
+  }, [enrichedBins, zones]);
+
+  const aisleEntries = useMemo(() => {
     const byAisle = new Map();
-    for (const bin of bins) {
+    for (const bin of enrichedBins) {
       const aisle = String(bin.aisle || '').trim();
       if (!aisle) continue;
-      const key = aisle.toLocaleLowerCase('ro');
+      const key = `${bin.zone_id || 'none'}:${aisle.toLocaleLowerCase('ro')}`;
       const current = byAisle.get(key);
       if (current) current.binCount += 1;
-      else byAisle.set(key, { key: `row:${key}`, aisle, binCount: 1 });
+      else byAisle.set(key, {
+        key: `aisle:${key}`,
+        aisle,
+        zone_id: bin.zone_id,
+        zone_code: bin.zone_code,
+        zone_name: bin.zone_name,
+        barcode: hierarchyBarcode('AISLE', bin.zone_code, aisle),
+        binCount: 1,
+      });
     }
-    return [...byAisle.values()].sort((left, right) => NATURAL_COLLATOR.compare(left.aisle, right.aisle));
-  }, [bins]);
+    return [...byAisle.values()].sort((left, right) => NATURAL_COLLATOR.compare(
+      `${left.zone_code} ${left.aisle}`,
+      `${right.zone_code} ${right.aisle}`,
+    ));
+  }, [enrichedBins]);
 
-  const allEntries = scope === 'rows' ? rows : bins;
+  const shelfEntries = useMemo(() => {
+    const byShelf = new Map();
+    for (const bin of enrichedBins) {
+      const aisle = String(bin.aisle || '').trim();
+      const shelf = String(bin.row_num || '').trim();
+      if (!shelf) continue;
+      const key = `${bin.zone_id || 'none'}:${aisle.toLocaleLowerCase('ro')}:${shelf.toLocaleLowerCase('ro')}`;
+      const current = byShelf.get(key);
+      if (current) current.binCount += 1;
+      else byShelf.set(key, {
+        key: `shelf:${key}`,
+        aisle,
+        row_num: shelf,
+        zone_id: bin.zone_id,
+        zone_code: bin.zone_code,
+        zone_name: bin.zone_name,
+        barcode: hierarchyBarcode('SHELF', bin.zone_code, aisle, shelf),
+        binCount: 1,
+      });
+    }
+    return [...byShelf.values()].sort((left, right) => NATURAL_COLLATOR.compare(
+      `${left.zone_code} ${left.aisle} ${left.row_num}`,
+      `${right.zone_code} ${right.aisle} ${right.row_num}`,
+    ));
+  }, [enrichedBins]);
+
+  const allEntries = useMemo(() => ({
+    zones: zoneEntries,
+    aisles: aisleEntries,
+    shelves: shelfEntries,
+    bins: enrichedBins,
+  })[scope] || [], [aisleEntries, enrichedBins, scope, shelfEntries, zoneEntries]);
 
   const entries = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('ro');
-    if (scope === 'rows') {
-      if (!term) return rows;
-      return rows.filter((row) => `${row.aisle} ${rowBarcode(row.aisle)}`.toLocaleLowerCase('ro').includes(term));
-    }
-    if (!term) return bins;
-    return bins.filter((bin) => binSearchText(bin).includes(term));
-  }, [bins, rows, scope, search]);
+    if (!term) return allEntries;
+    return allEntries.filter((entry) => (
+      scope === 'bins' ? binSearchText(entry) : [
+        entry.zone_code,
+        entry.zone_name,
+        entry.zone_type,
+        entry.aisle,
+        entry.row_num,
+        entry.barcode,
+      ].filter(Boolean).join(' ').toLocaleLowerCase('ro')
+    ).includes(term));
+  }, [allEntries, scope, search]);
 
   const selectedEntries = useMemo(() => allEntries.filter((entry) => {
-    const key = scope === 'rows' ? entry.key : `bin:${entry.bin_id}`;
+    const key = scope === 'bins' ? `bin:${entry.bin_id}` : entry.key;
     return selectedKeys.has(key);
   }), [allEntries, scope, selectedKeys]);
 
@@ -179,7 +282,7 @@ export default function BinLabels() {
   }
 
   function entryKey(entry) {
-    return scope === 'rows' ? entry.key : `bin:${entry.bin_id}`;
+    return scope === 'bins' ? `bin:${entry.bin_id}` : entry.key;
   }
 
   function toggleEntry(entry) {
@@ -209,22 +312,17 @@ export default function BinLabels() {
         <div className="label-builder-toolbar">
           <fieldset className="label-scope-picker">
             <legend>Ce tipărești?</legend>
-            <button
-              type="button"
-              className={`btn${scope === 'bins' ? ' btn-primary' : ''}`}
-              aria-pressed={scope === 'bins'}
-              onClick={() => changeScope('bins')}
-            >
-              Bin-uri
-            </button>
-            <button
-              type="button"
-              className={`btn${scope === 'rows' ? ' btn-primary' : ''}`}
-              aria-pressed={scope === 'rows'}
-              onClick={() => changeScope('rows')}
-            >
-              Rânduri
-            </button>
+            {SCOPE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`btn${scope === option.value ? ' btn-primary' : ''}`}
+                aria-pressed={scope === option.value}
+                onClick={() => changeScope(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
           </fieldset>
 
           <label className="form-group label-format-picker">
@@ -240,7 +338,7 @@ export default function BinLabels() {
               className="form-input"
               type="search"
               value={search}
-              placeholder={scope === 'rows' ? 'Ex.: A' : 'Cod, barcode, rând, raft…'}
+              placeholder={scope === 'bins' ? 'Cod, barcode, culoar, raft…' : 'Cod, nume sau barcode…'}
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
@@ -267,7 +365,7 @@ export default function BinLabels() {
         {error ? <div className="form-error">{error}</div> : null}
         {loading ? <div className="placeholder-section">Se încarcă locațiile…</div> : null}
         {!loading && !error ? (
-          <div className="label-source-list" aria-label={scope === 'rows' ? 'Rânduri disponibile' : 'Bin-uri disponibile'}>
+          <div className="label-source-list" aria-label="Etichete disponibile">
             {entries.map((entry) => {
               const key = entryKey(entry);
               const selected = selectedKeys.has(key);
@@ -275,11 +373,17 @@ export default function BinLabels() {
                 <label className={`label-source-option${selected ? ' selected' : ''}`} key={key}>
                   <input type="checkbox" checked={selected} onChange={() => toggleEntry(entry)} />
                   <span>
-                    <strong>{scope === 'rows' ? `Rând ${entry.aisle}` : entry.bin_code}</strong>
+                    <strong>{scope === 'zones'
+                      ? entry.zone_name
+                      : scope === 'aisles'
+                        ? `Culoar ${entry.aisle}`
+                        : scope === 'shelves'
+                          ? `Raft ${entry.row_num}`
+                          : entry.bin_code}</strong>
                     <small>
-                      {scope === 'rows'
-                        ? `${entry.binCount} ${entry.binCount === 1 ? 'locație' : 'locații'} · ${rowBarcode(entry.aisle)}`
-                        : `${entry.bin_barcode || entry.bin_code}${coordinates(entry) ? ` · ${coordinates(entry)}` : ''}`}
+                      {scope === 'bins'
+                        ? `${entry.bin_barcode || entry.bin_code}${coordinates(entry) ? ` · ${coordinates(entry)}` : ''}`
+                        : `${entry.barcode} · ${entry.binCount} ${entry.binCount === 1 ? 'locație' : 'locații'}`}
                     </small>
                   </span>
                 </label>
@@ -293,13 +397,13 @@ export default function BinLabels() {
       <section className="section label-preview-section">
         <div className="section-title">Previzualizare ({selectedEntries.length})</div>
         {selectedEntries.length === 0 ? (
-          <div className="placeholder-section label-builder-controls">Selectează cel puțin o locație sau un rând.</div>
+          <div className="placeholder-section label-builder-controls">Selectează cel puțin o zonă, un culoar, un raft sau un bin.</div>
         ) : (
           <div className={`bin-label-print-area format-${format}`}>
             {selectedEntries.map((entry) => (
-              scope === 'rows'
-                ? <RowLabel key={entry.key} entry={entry} format={format} warehouseName={warehouseName} />
-                : <BinLabel key={entry.bin_id} entry={entry} format={format} warehouseName={warehouseName} />
+              scope === 'bins'
+                ? <BinLabel key={entry.bin_id} entry={entry} format={format} warehouseName={warehouseName} />
+                : <HierarchyLabel key={entry.key} entry={entry} format={format} warehouseName={warehouseName} scope={scope} />
             ))}
           </div>
         )}

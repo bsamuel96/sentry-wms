@@ -171,7 +171,7 @@ export default function Bins() {
     { key: 'bin_barcode', label: 'Barcode', mono: true },
     { key: 'bin_type', label: 'Type' },
     { key: 'zone_name', label: 'Zone' },
-    { key: 'aisle', label: 'Rând' },
+    { key: 'aisle', label: 'Culoar' },
     { key: 'row_num', label: 'Raft' },
     { key: 'position_num', label: 'Coloană' },
     { key: 'pick_sequence', label: 'Pick Seq' },
@@ -223,8 +223,8 @@ export default function Bins() {
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Rând</label>
-            <input aria-label="Rând" className="form-input" value={form.aisle || ''} onChange={(e) => setForm({ ...form, aisle: e.target.value })} />
+            <label>Culoar</label>
+            <input aria-label="Culoar" className="form-input" value={form.aisle || ''} onChange={(e) => setForm({ ...form, aisle: e.target.value })} />
           </div>
           <div className="form-group">
             <label>Raft</label>
@@ -290,7 +290,7 @@ export default function Bins() {
             <span className="detail-label">Barcode</span><span className="mono">{detail.bin_barcode}</span>
             <span className="detail-label">Type</span><span>{detail.bin_type}</span>
             <span className="detail-label">Zone</span><span>{detail.zone_name || '-'}</span>
-            <span className="detail-label">Rând</span><span>{detail.aisle || '-'}</span>
+            <span className="detail-label">Culoar</span><span>{detail.aisle || '-'}</span>
             <span className="detail-label">Raft</span><span>{detail.row_num || '-'}</span>
             <span className="detail-label">Coloană</span><span>{detail.position_num || '-'}</span>
             <span className="detail-label">Nivel</span><span>{detail.level_num || '-'}</span>

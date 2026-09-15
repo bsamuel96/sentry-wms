@@ -24,6 +24,7 @@ function response(body) {
 const BINS = [
   {
     bin_id: 1,
+    zone_id: 3,
     bin_code: 'A-a-1',
     bin_barcode: 'A-a-1',
     aisle: 'A',
@@ -33,6 +34,7 @@ const BINS = [
   },
   {
     bin_id: 2,
+    zone_id: 3,
     bin_code: 'A-a-2',
     bin_barcode: 'A-a-2',
     aisle: 'A',
@@ -42,6 +44,7 @@ const BINS = [
   },
   {
     bin_id: 3,
+    zone_id: 3,
     bin_code: 'B-b-1',
     bin_barcode: 'B-b-1',
     aisle: 'B',
@@ -51,12 +54,23 @@ const BINS = [
   },
 ];
 
+const ZONES = [
+  { zone_id: 1, zone_code: 'BUCATARIE', zone_name: 'Bucătărie', zone_type: 'STORAGE', is_active: true },
+  { zone_id: 2, zone_code: 'BAIE', zone_name: 'Baie', zone_type: 'STORAGE', is_active: true },
+  { zone_id: 3, zone_code: 'SPATE', zone_name: 'Spatele magazinului', zone_type: 'STORAGE', is_active: true },
+  { zone_id: 4, zone_code: 'FATA', zone_name: 'Fața magazinului', zone_type: 'STORAGE', is_active: true },
+];
+
 import BinLabels from '../pages/BinLabels.jsx';
 
 describe('Bin and row barcode labels', () => {
   beforeEach(() => {
     apiGetMock.mockReset();
-    apiGetMock.mockImplementation(() => response({ bins: BINS, page: 1, pages: 1, total: BINS.length }));
+    apiGetMock.mockImplementation((path) => (
+      path.startsWith('/admin/zones')
+        ? response({ zones: ZONES, page: 1, pages: 1, total: ZONES.length })
+        : response({ bins: BINS, page: 1, pages: 1, total: BINS.length })
+    ));
     window.print = vi.fn();
   });
 
@@ -72,16 +86,32 @@ describe('Bin and row barcode labels', () => {
     expect(screen.getByRole('status')).toHaveTextContent('3 selectate');
   });
 
-  it('deduplicates aisles into printable row labels', async () => {
+  it('deduplicates aisles into printable aisle labels scoped by zone', async () => {
     render(<BinLabels />);
 
     await screen.findByText('A-a-1');
-    fireEvent.click(screen.getByRole('button', { name: 'Rânduri' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Culoare' }));
     fireEvent.click(screen.getByRole('button', { name: 'Selectează toate (2)' }));
 
-    expect(screen.getByRole('img', { name: 'Cod de bare ROW-A' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Cod de bare ROW-B' })).toBeInTheDocument();
-    expect(screen.getAllByText('RÂND A').length).toBeGreaterThan(0);
+    expect(screen.getByRole('img', { name: 'Cod de bare AISLE:SPATE:A' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Cod de bare AISLE:SPATE:B' })).toBeInTheDocument();
+    expect(screen.getAllByText('CULOAR A').length).toBeGreaterThan(0);
+  });
+
+  it('prints zone and shelf labels from the same warehouse hierarchy', async () => {
+    render(<BinLabels />);
+
+    await screen.findByText('A-a-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Zone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Selectează toate (4)' }));
+    expect(screen.getByRole('img', { name: 'Cod de bare ZONE:BUCATARIE' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Cod de bare ZONE:BAIE' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Cod de bare ZONE:SPATE' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Cod de bare ZONE:FATA' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rafturi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Selectează toate (2)' }));
+    expect(screen.getByRole('img', { name: 'Cod de bare SHELF:SPATE:A:A' })).toBeInTheDocument();
   });
 
   it('prints only after at least one label is selected', async () => {

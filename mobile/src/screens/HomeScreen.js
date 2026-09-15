@@ -11,6 +11,7 @@ import WarehouseSelector from '../components/WarehouseSelector';
 import { OperationGridSkeleton } from '../components/LoadingSkeleton';
 import client, { getStoredApiUrl, setApiUrl } from '../api/client';
 import { colors, fonts, radii, spacing } from '../theme/styles';
+import { parseWarehouseHierarchyBarcode } from '../utils/barcodes';
 
 const FUNCTIONS = [
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
@@ -172,12 +173,12 @@ export default function HomeScreen({ navigation }) {
     const cleaned = barcode.replace(/[\r\n\s]+/g, '').trim();
     if (!cleaned) return;
 
-    if (cleaned.toUpperCase().startsWith('ROW-')) {
-      const aisle = cleaned.slice(4) || '?';
+    const hierarchyLabel = parseWarehouseHierarchyBarcode(cleaned);
+    if (hierarchyLabel) {
       setInfoModal({
         visible: true,
-        title: `RÂND ${aisle}`,
-        message: 'Etichetă de rând recunoscută. Pentru o operațiune de stoc, scanează apoi eticheta bin-ului exact.',
+        title: hierarchyLabel.title,
+        message: hierarchyLabel.message,
       });
       return;
     }

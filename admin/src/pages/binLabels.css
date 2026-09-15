@@ -1,6 +1,6 @@
 .label-builder-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, auto) minmax(210px, 260px) minmax(240px, 1fr);
+  grid-template-columns: minmax(340px, auto) minmax(210px, 260px) minmax(240px, 1fr);
   gap: 16px;
   align-items: end;
 }
