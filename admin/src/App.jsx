@@ -44,6 +44,7 @@ import InterWarehouseTransfers from './pages/InterWarehouseTransfers.jsx';
 import TransferOrders from './pages/TransferOrders.jsx';
 import POSActivity from './pages/POSActivity.jsx';
 import Fraud from './pages/Fraud.jsx';
+import CatalogMatching from './pages/CatalogMatching.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -118,6 +119,7 @@ export default function App() {
             supervisor view; Dashboard counts still surface throughput. */}
         <Route path="/picking-batches" element={<ErrorBoundary fallbackMessage="Could not load picking batches."><PickingBatches /></ErrorBoundary>} />
         <Route path="/items" element={<ErrorBoundary fallbackMessage="Could not load items."><Items /></ErrorBoundary>} />
+        <Route path="/catalog-matching" element={<ErrorBoundary fallbackMessage="Could not load TecDoc matching."><CatalogMatching /></ErrorBoundary>} />
         <Route path="/vendors" element={<ErrorBoundary fallbackMessage="Could not load vendors."><Vendors /></ErrorBoundary>} />
         {/* Warehouse-layout pages consolidated under a single /data
             parent with a tab strip. The four old top-level paths

@@ -108,7 +108,7 @@ export default function TransferOrders() {
   }
 
   async function loadOrders() {
-    const qp = new URLSearchParams({ page: String(page), per_page: '50' });
+    const qp = new URLSearchParams({ page: String(page), per_page: '10' });
     if (statusFilter !== 'All') qp.set('status', statusFilter);
     if (sourceFilter) qp.set('source_warehouse_id', sourceFilter);
     if (destFilter) qp.set('destination_warehouse_id', destFilter);

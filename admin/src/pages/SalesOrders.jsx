@@ -55,7 +55,7 @@ export default function SalesOrders() {
   }, [searchParams]);
 
   async function loadOrders() {
-    const qp = new URLSearchParams({ page: String(page), per_page: '50' });
+    const qp = new URLSearchParams({ page: String(page), per_page: '10' });
     if (statusFilter !== 'All') qp.set('status', statusFilter);
     if (search) qp.set('q', search);
     // Returns (RMAs) + refunds (credit memos) live on the Returns page, not

@@ -2,6 +2,8 @@
 Inventory management endpoints: cycle count creation, retrieval, and submission.
 """
 
+import json
+import re
 import uuid
 
 from flask import Blueprint, g, jsonify, request
@@ -9,15 +11,362 @@ from sqlalchemy import text
 
 from constants import (
     COUNT_PENDING, COUNT_IN_PROGRESS, COUNT_COMPLETED, COUNT_VARIANCE,
-    ADJ_PENDING, ACTION_COUNT,
+    ADJ_PENDING, ACTION_ADJUST, ACTION_COUNT,
 )
 from middleware.auth_middleware import require_auth, check_warehouse_access
 from middleware.db import with_db
 from schemas.cycle_count import CreateCycleCountRequest, SubmitCycleCountRequest
 from services.audit_service import write_audit_log
+from services.inventory_service import (
+    add_inventory,
+    release_satisfiable_backorders,
+    RELEASE_SOURCE_ADJUSTMENT,
+)
+from services.webhook_dispatcher.backorder_notifier import dispatch_backorder_notification
 from utils.validation import validate_body
 
 inventory_bp = Blueprint("inventory", __name__)
+
+
+def _valid_gtin(value):
+    """Validate EAN-8, UPC-A, EAN-13 and GTIN-14 without provider calls."""
+    barcode = str(value or "").strip()
+    if len(barcode) not in (8, 12, 13, 14) or not barcode.isdigit():
+        return False
+    digits = [int(char) for char in barcode]
+    check_digit = digits.pop()
+    total = sum(
+        digit * (3 if index % 2 == 0 else 1)
+        for index, digit in enumerate(reversed(digits))
+    )
+    return (10 - (total % 10)) % 10 == check_digit
+
+
+def _stock_entry_payload(db, row, *, repeated=False):
+    current = db.execute(
+        text("""
+            SELECT COALESCE(SUM(quantity_on_hand), 0)
+            FROM inventory
+            WHERE item_id = :iid AND bin_id = :bid
+        """),
+        {"iid": row.item_id, "bid": row.bin_id},
+    ).scalar()
+    item = db.execute(
+        text("SELECT sku, item_name, upc FROM items WHERE item_id = :iid"),
+        {"iid": row.item_id},
+    ).fetchone()
+    discovery = db.execute(
+        text("SELECT status FROM item_catalog_discoveries WHERE item_id = :iid"),
+        {"iid": row.item_id},
+    ).fetchone()
+    return {
+        "stock_entry_id": row.stock_entry_id,
+        "idempotent_replay": repeated,
+        "item": {
+            "item_id": row.item_id,
+            "sku": item.sku,
+            "item_name": item.item_name,
+            "upc": item.upc,
+        },
+        "bin_id": row.bin_id,
+        "warehouse_id": row.warehouse_id,
+        "quantity_added": row.quantity,
+        "quantity_in_bin": int(current or 0),
+        "catalog_status": discovery.status if discovery else "KNOWN",
+    }
+
+
+def _bin_coordinates(value):
+    parts = [part.strip() for part in str(value or "").split("-") if part.strip()]
+    return {
+        "aisle": parts[0] if len(parts) > 0 else None,
+        "row_num": parts[1] if len(parts) > 1 else None,
+        "position_num": "-".join(parts[2:]) if len(parts) > 2 else None,
+    }
+
+
+@inventory_bp.route("/stock-entry/bin", methods=["POST"])
+@require_auth
+@with_db
+def register_stock_entry_bin():
+    """Register one physical location from its printed/scanned code."""
+    body = request.get_json(silent=True) or {}
+    try:
+        warehouse_id = int(body.get("warehouse_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Depozitul este obligatoriu."}), 422
+    bin_code = str(body.get("bin_code") or body.get("barcode") or "").strip()
+    zone_code = str(body.get("zone_code") or "PICK").strip().upper()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,49}", bin_code):
+        return jsonify({"error": "Codul locației este invalid sau prea lung."}), 422
+    if not re.fullmatch(r"[A-Z0-9_-]{1,20}", zone_code):
+        return jsonify({"error": "Codul zonei este invalid."}), 422
+
+    user = g.current_user or {}
+    if user.get("role") != "ADMIN" and "receive" not in set(user.get("allowed_functions") or []):
+        return jsonify({"error": "Nu ai permisiunea Recepție pentru această operație."}), 403
+    allowed, denied = check_warehouse_access(warehouse_id)
+    if not allowed:
+        return denied
+
+    g.db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"mobile-bin:{warehouse_id}:{bin_code.casefold()}"},
+    )
+    existing = g.db.execute(text("""
+        SELECT bin_id, warehouse_id, bin_code, bin_barcode, bin_type,
+               aisle, row_num, level_num, position_num
+        FROM bins
+        WHERE warehouse_id = :wid
+          AND (LOWER(bin_code) = LOWER(:code) OR LOWER(bin_barcode) = LOWER(:code))
+        LIMIT 1
+    """), {"wid": warehouse_id, "code": bin_code}).fetchone()
+    if existing:
+        return jsonify({"bin": dict(existing._mapping), "created": False})
+
+    zone = g.db.execute(text("""
+        SELECT zone_id FROM zones
+        WHERE warehouse_id = :wid AND LOWER(zone_code) = LOWER(:code) AND is_active = TRUE
+        LIMIT 1
+    """), {"wid": warehouse_id, "code": zone_code}).fetchone()
+    if not zone:
+        zone = g.db.execute(text("""
+            INSERT INTO zones (warehouse_id, zone_code, zone_name, zone_type)
+            VALUES (:wid, :code, :name, 'PICKING')
+            RETURNING zone_id
+        """), {
+            "wid": warehouse_id,
+            "code": zone_code,
+            "name": "Zonă colectare" if zone_code == "PICK" else zone_code,
+        }).fetchone()
+
+    coordinates = _bin_coordinates(bin_code)
+    sequence = g.db.execute(text("""
+        SELECT COALESCE(MAX(GREATEST(pick_sequence, putaway_sequence)), 0) + 1
+        FROM bins WHERE warehouse_id = :wid
+    """), {"wid": warehouse_id}).scalar()
+    created = g.db.execute(text("""
+        INSERT INTO bins (
+            zone_id, warehouse_id, bin_code, bin_barcode, bin_type,
+            aisle, row_num, position_num, pick_sequence, putaway_sequence,
+            description, external_id
+        ) VALUES (
+            :zone_id, :wid, :code, :code, 'Pickable',
+            :aisle, :row_num, :position_num, :sequence, :sequence,
+            'Locație introdusă prin scanare în aplicația mobilă', :external_id
+        )
+        RETURNING bin_id, warehouse_id, bin_code, bin_barcode, bin_type,
+                  aisle, row_num, level_num, position_num
+    """), {
+        "zone_id": zone.zone_id,
+        "wid": warehouse_id,
+        "code": bin_code,
+        "sequence": int(sequence or 1),
+        "external_id": str(uuid.uuid4()),
+        **coordinates,
+    }).fetchone()
+    actor = str(user.get("username") or "unknown")
+    write_audit_log(
+        g.db,
+        action_type=ACTION_ADJUST,
+        entity_type="BIN",
+        entity_id=created.bin_id,
+        user_id=actor,
+        warehouse_id=warehouse_id,
+        details={"operation": "mobile_bin_registration", "bin_code": bin_code, "zone_code": zone_code},
+    )
+    g.db.commit()
+    return jsonify({"bin": dict(created._mapping), "created": True}), 201
+
+
+@inventory_bp.route("/stock-entry", methods=["POST"])
+@require_auth
+@with_db
+def stock_entry():
+    """Add a scanned EAN to a scanned bin and queue unknown items for review.
+
+    This deliberately does not call TecDoc.  The warehouse write remains fast
+    and deterministic; an admin compares provisional items later from the web
+    catalogue-review page.
+    """
+    body = request.get_json(silent=True) or {}
+    try:
+        warehouse_id = int(body.get("warehouse_id"))
+        bin_id = int(body.get("bin_id"))
+        quantity = int(body.get("quantity", 1))
+        idempotency_key = str(uuid.UUID(str(body.get("idempotency_key") or "")))
+    except (TypeError, ValueError, AttributeError):
+        return jsonify({"error": "Depozitul, locația, cantitatea și cheia cererii sunt obligatorii."}), 422
+
+    ean = str(body.get("ean") or "").strip()
+    if not _valid_gtin(ean):
+        return jsonify({"error": "Scanează un EAN/GTIN valid (8, 12, 13 sau 14 cifre)."}), 422
+    if quantity < 1 or quantity > 100000:
+        return jsonify({"error": "Cantitatea trebuie să fie între 1 și 100000."}), 422
+
+    user = g.current_user or {}
+    if user.get("role") != "ADMIN" and "receive" not in set(user.get("allowed_functions") or []):
+        return jsonify({"error": "Nu ai permisiunea Recepție pentru această operație."}), 403
+    allowed, denied = check_warehouse_access(warehouse_id)
+    if not allowed:
+        return denied
+
+    # Serialize retries before checking the idempotency table.  Both locks are
+    # transaction-scoped and disappear automatically on commit/rollback.
+    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": idempotency_key})
+    previous = g.db.execute(
+        text("""
+            SELECT stock_entry_id, item_id, bin_id, warehouse_id, quantity
+            FROM mobile_stock_entries WHERE idempotency_key = CAST(:key AS uuid)
+        """),
+        {"key": idempotency_key},
+    ).fetchone()
+    if previous:
+        return jsonify(_stock_entry_payload(g.db, previous, repeated=True))
+
+    bin_row = g.db.execute(
+        text("""
+            SELECT bin_id, bin_code, warehouse_id
+            FROM bins
+            WHERE bin_id = :bid AND warehouse_id = :wid AND is_active = TRUE
+            FOR UPDATE
+        """),
+        {"bid": bin_id, "wid": warehouse_id},
+    ).fetchone()
+    if not bin_row:
+        return jsonify({"error": "Locația nu există sau nu aparține depozitului selectat."}), 404
+
+    # A second handheld can scan the same brand-new EAN at the same time.
+    # Lock on the EAN before deciding whether the provisional item exists.
+    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:ean))"), {"ean": f"ean:{ean}"})
+    item = g.db.execute(
+        text("""
+            SELECT item_id, sku, item_name, upc, external_id
+            FROM items
+            WHERE upc = :ean
+               OR barcode_aliases @> CAST(:aliases AS jsonb)
+            ORDER BY item_id
+            LIMIT 1
+            FOR UPDATE
+        """),
+        {"ean": ean, "aliases": json.dumps([ean])},
+    ).fetchone()
+    provisional = False
+    if not item:
+        provisional = True
+        base_sku = f"EAN-{ean}"
+        sku = base_sku
+        suffix = 1
+        while g.db.execute(text("SELECT 1 FROM items WHERE sku = :sku"), {"sku": sku}).fetchone():
+            suffix += 1
+            sku = f"{base_sku}-{suffix}"
+        item = g.db.execute(
+            text("""
+                INSERT INTO items (
+                    sku, item_name, description, upc, category,
+                    default_bin_id, external_id
+                ) VALUES (
+                    :sku, :name, :description, :ean, :category,
+                    :bin_id, :external_id
+                )
+                RETURNING item_id, sku, item_name, upc, external_id
+            """),
+            {
+                "sku": sku,
+                "name": f"Produs nou – {ean}",
+                "description": "Creat prin scanare în depozit; identificarea TecDoc este în așteptare.",
+                "ean": ean,
+                "category": "În așteptare TecDoc",
+                "bin_id": bin_id,
+                "external_id": str(uuid.uuid4()),
+            },
+        ).fetchone()
+        g.db.execute(
+            text("""
+                INSERT INTO item_catalog_discoveries (
+                    item_id, scanned_ean, status, created_by
+                ) VALUES (:iid, :ean, 'PENDING', :actor)
+                ON CONFLICT (item_id) DO NOTHING
+            """),
+            {"iid": item.item_id, "ean": ean, "actor": str(user.get("username") or "unknown")},
+        )
+
+    new_quantity = add_inventory(g.db, item.item_id, bin_id, warehouse_id, quantity)
+    actor = str(user.get("username") or "unknown")
+    adjustment_external_id = str(uuid.uuid4())
+    g.db.execute(
+        text("""
+            INSERT INTO inventory_adjustments (
+                item_id, bin_id, warehouse_id, quantity_change, reason_code,
+                reason_detail, status, adjusted_by, external_id
+            ) VALUES (
+                :iid, :bid, :wid, :qty, 'FOUND', :detail,
+                'APPROVED', :actor, :external_id
+            )
+        """),
+        {
+            "iid": item.item_id,
+            "bid": bin_id,
+            "wid": warehouse_id,
+            "qty": quantity,
+            "detail": "Intrare stoc mobil prin scanare EAN și locație",
+            "actor": actor,
+            "external_id": adjustment_external_id,
+        },
+    )
+    entry = g.db.execute(
+        text("""
+            INSERT INTO mobile_stock_entries (
+                idempotency_key, item_id, bin_id, warehouse_id, quantity, entered_by
+            ) VALUES (CAST(:key AS uuid), :iid, :bid, :wid, :qty, :actor)
+            RETURNING stock_entry_id, item_id, bin_id, warehouse_id, quantity
+        """),
+        {
+            "key": idempotency_key,
+            "iid": item.item_id,
+            "bid": bin_id,
+            "wid": warehouse_id,
+            "qty": quantity,
+            "actor": actor,
+        },
+    ).fetchone()
+    write_audit_log(
+        g.db,
+        action_type=ACTION_COUNT,
+        entity_type="ITEM",
+        entity_id=item.item_id,
+        user_id=actor,
+        warehouse_id=warehouse_id,
+        details={
+            "operation": "mobile_stock_entry",
+            "ean": ean,
+            "bin_id": bin_id,
+            "bin_code": bin_row.bin_code,
+            "quantity": quantity,
+            "quantity_in_bin": new_quantity,
+            "provisional_item": provisional,
+            "idempotency_key": idempotency_key,
+        },
+    )
+    notifications = []
+    release_satisfiable_backorders(
+        g.db,
+        warehouse_id=warehouse_id,
+        item_id=item.item_id,
+        source_txn_id=g.source_txn_id,
+        deferred_notifications=notifications,
+        source=RELEASE_SOURCE_ADJUSTMENT,
+    )
+    g.db.commit()
+    for event_type, payload, notification_warehouse_id in notifications:
+        dispatch_backorder_notification(
+            event_type=event_type,
+            payload=payload,
+            warehouse_id=notification_warehouse_id,
+        )
+    payload = _stock_entry_payload(g.db, entry)
+    payload["created_provisional_item"] = provisional
+    return jsonify(payload), 201
 
 
 @inventory_bp.route("/cycle-count/create", methods=["POST"])

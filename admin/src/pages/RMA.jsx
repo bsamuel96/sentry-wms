@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
@@ -22,6 +22,8 @@ export default function RMA() {
   const [rmas, setRmas] = useState([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [lines, setLines] = useState([]);
@@ -48,20 +50,21 @@ export default function RMA() {
   const [voiding, setVoiding] = useState(false);
   const [voidError, setVoidError] = useState('');
 
-  useEffect(() => {
-    loadRmas();
-  }, [statusFilter, search]);
-
-  async function loadRmas() {
-    const qp = new URLSearchParams({ order_type: 'return', per_page: '50' });
+  const loadRmas = useCallback(async () => {
+    const qp = new URLSearchParams({ order_type: 'return', page: String(page), per_page: '10' });
     if (statusFilter !== 'All') qp.set('status', statusFilter);
     if (search) qp.set('q', search);
     const res = await api.get(`/admin/sales-orders?${qp}`);
     if (res?.ok) {
       const data = await res.json();
       setRmas(data.sales_orders || []);
+      setPagination({ page: data.page, pages: data.pages, total: data.total });
     }
-  }
+  }, [page, search, statusFilter]);
+
+  useEffect(() => {
+    loadRmas();
+  }, [loadRmas]);
 
   // Close the bin results dropdown when the operator clicks away.
   useEffect(() => {
@@ -259,7 +262,7 @@ export default function RMA() {
           className="form-select"
           style={{ width: 180 }}
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
         >
           {RMA_STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>{s === 'All' ? 'All statuses' : s}</option>
@@ -270,13 +273,15 @@ export default function RMA() {
           style={{ width: 260 }}
           placeholder="Search by RMA number"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
       </div>
       <DataTable
         rowKey="so_id"
         columns={columns}
         data={rmas}
+        pagination={pagination}
+        onPageChange={setPage}
         onRowClick={openRma}
         clickColumn="so_number"
         emptyMessage="No RMAs found"

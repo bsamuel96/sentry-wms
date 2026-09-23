@@ -133,6 +133,8 @@ ALL_TABLES = [
     "sales_orders",
     "purchase_order_lines",
     "purchase_orders",
+    "mobile_stock_entries",
+    "item_catalog_discoveries",
     "inventory",
     "items",
     "bins",

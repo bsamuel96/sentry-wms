@@ -471,6 +471,8 @@ def create_app():
     app.register_blueprint(packing_bp, url_prefix="/api/packing")
     app.register_blueprint(shipping_bp, url_prefix="/api/shipping")
     app.register_blueprint(inventory_bp, url_prefix="/api/inventory")
+    from routes.catalog_discovery import catalog_discovery_bp
+    app.register_blueprint(catalog_discovery_bp, url_prefix="/api/catalog-discovery")
     app.register_blueprint(transfers_bp, url_prefix="/api/transfers")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(warehouses_bp, url_prefix="/api/warehouses")

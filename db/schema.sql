@@ -120,6 +120,51 @@ CREATE INDEX ix_inventory_item ON inventory(item_id);
 CREATE INDEX ix_inventory_bin ON inventory(bin_id);
 CREATE INDEX ix_inventory_warehouse ON inventory(warehouse_id);
 
+-- Unknown EANs entered from the handheld are reviewed against TecDoc later in
+-- the web admin.  Keeping this separate from items prevents provisional
+-- catalogue metadata from masquerading as a confirmed TecDoc identity.
+CREATE TABLE item_catalog_discoveries (
+    discovery_id BIGSERIAL PRIMARY KEY,
+    item_id INT NOT NULL UNIQUE REFERENCES items(item_id) ON DELETE CASCADE,
+    scanned_ean VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'MATCHED', 'IGNORED')),
+    tecdoc_article_id VARCHAR(100),
+    tecdoc_code VARCHAR(100),
+    tecdoc_brand VARCHAR(200),
+    tecdoc_name VARCHAR(300),
+    tecdoc_match_type VARCHAR(30),
+    tecdoc_payload JSONB,
+    created_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_by VARCHAR(100),
+    reviewed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ix_item_catalog_discoveries_status_created
+    ON item_catalog_discoveries(status, created_at DESC);
+CREATE INDEX ix_item_catalog_discoveries_ean
+    ON item_catalog_discoveries(scanned_ean);
+
+-- One row per accepted mobile submission.  idempotency_key makes network
+-- retries safe while preserving a compact operational history.
+CREATE TABLE mobile_stock_entries (
+    stock_entry_id BIGSERIAL PRIMARY KEY,
+    idempotency_key UUID NOT NULL UNIQUE,
+    item_id INT NOT NULL REFERENCES items(item_id),
+    bin_id INT NOT NULL REFERENCES bins(bin_id),
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
+    quantity INT NOT NULL CHECK (quantity > 0),
+    entered_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ix_mobile_stock_entries_item_created
+    ON mobile_stock_entries(item_id, created_at DESC);
+CREATE INDEX ix_mobile_stock_entries_bin_created
+    ON mobile_stock_entries(bin_id, created_at DESC);
+
 -- ============================================================
 -- PURCHASE ORDERS (Inbound / Receiving)
 -- ============================================================

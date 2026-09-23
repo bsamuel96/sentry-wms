@@ -104,7 +104,7 @@ export default function PurchaseOrders() {
   }, [newLineSku, editing]);
 
   async function loadOrders() {
-    const qp = new URLSearchParams({ page: String(page), per_page: '50' });
+    const qp = new URLSearchParams({ page: String(page), per_page: '10' });
     if (statusFilter !== 'All') qp.set('status', statusFilter);
     if (search) qp.set('q', search);
     if (showArchived) qp.set('include_archived', 'true');

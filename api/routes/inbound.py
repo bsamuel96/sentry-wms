@@ -762,7 +762,7 @@ def _storage_bins_post():
 
     The route intentionally reuses the ``inventory_update`` inbound scope:
     creating the target bins is a prerequisite of that state-sync contract.
-    It never deletes bins or inventory and supports a read-only dry run.
+    It never deletes history. Explicit replacement retires unlisted empty bins.
     """
     try:
         body = InboundBody.model_validate(request.get_json(silent=False))
@@ -782,6 +782,7 @@ def _storage_bins_post():
     zone_code = str(sp.get("zone_code") or "PICK").strip().upper()
     records = sp.get("bins")
     dry_run = bool(sp.get("dry_run", False))
+    replace = sp.get("replace") is True
     if warehouse_id <= 0 or not zone_code or not isinstance(records, list):
         response = make_response(jsonify({
             "error_kind": "invalid_storage_bins_payload",
@@ -793,6 +794,10 @@ def _storage_bins_post():
         response = make_response(jsonify({"error_kind": "too_many_bins", "maximum": 5000}), 422)
         response.headers["X-Sentry-Canonical-Model"] = "DRAFT-v1"
         return response
+
+    allowed_warehouses = (g.current_token or {}).get("warehouse_ids") or []
+    if warehouse_id not in allowed_warehouses:
+        return jsonify({"error_kind": "scope_violation", "field": "warehouse_id"}), 403
 
     warehouse = g.db.execute(
         text("SELECT warehouse_id FROM warehouses WHERE warehouse_id = :wid"),
@@ -853,12 +858,25 @@ def _storage_bins_post():
     existing_rows = g.db.execute(
         text("""
             SELECT bin_id, zone_id, bin_code, bin_barcode, bin_type, aisle,
-                   row_num, level_num, position_num, pick_sequence, putaway_sequence
+                   row_num, level_num, position_num, pick_sequence, putaway_sequence, is_active
             FROM bins WHERE warehouse_id = :wid
         """),
         {"wid": warehouse_id},
     ).fetchall()
     existing_by_code = {str(row.bin_code).casefold(): row for row in existing_rows}
+    retired = [row for row in existing_rows if str(row.bin_code).casefold() not in seen_codes and row.is_active]
+    if replace and not dry_run:
+        # Serialize replacement with inventory operations holding bin/inventory locks.
+        g.db.execute(text("SELECT bin_id FROM bins WHERE warehouse_id = :wid FOR UPDATE"), {"wid": warehouse_id}).fetchall()
+        occupied = g.db.execute(text("""
+            SELECT COUNT(*) FROM inventory
+            WHERE warehouse_id = :wid AND (quantity_on_hand <> 0 OR COALESCE(quantity_allocated, 0) <> 0)
+        """), {"wid": warehouse_id}).scalar()
+        if occupied:
+            g.db.rollback()
+            return jsonify({"error_kind": "inventory_not_empty", "message": "Empty the warehouse before replacing its bins."}), 409
+        if retired:
+            g.db.execute(text("UPDATE bins SET is_active = FALSE WHERE bin_id = ANY(:ids)"), {"ids": [row.bin_id for row in retired]})
     desired_zone_id = zone.zone_id if zone else None
     created = updated = unchanged = 0
 
@@ -898,7 +916,8 @@ def _storage_bins_post():
             continue
 
         differs = (
-            existing.zone_id != desired_zone_id
+            (replace and not existing.is_active)
+            or existing.zone_id != desired_zone_id
             or _text_value(existing.bin_barcode) != _text_value(desired["barcode"])
             or _text_value(existing.bin_type) != _text_value(desired["type"])
             or _text_value(existing.aisle) != _text_value(desired["aisle"])
@@ -915,12 +934,13 @@ def _storage_bins_post():
         if not dry_run:
             g.db.execute(text("""
                 UPDATE bins SET
+                    is_active = CASE WHEN :replace THEN TRUE ELSE is_active END,
                     zone_id = :zone_id, bin_barcode = :barcode, bin_type = :type,
                     aisle = :aisle, row_num = :row_num, level_num = :level_num,
                     position_num = :position_num, pick_sequence = :pick_sequence,
                     putaway_sequence = :putaway_sequence
                 WHERE bin_id = :bin_id
-            """), {"zone_id": desired_zone_id, "bin_id": existing.bin_id, **desired})
+            """), {"zone_id": desired_zone_id, "bin_id": existing.bin_id, "replace": replace, **desired})
 
     if not dry_run:
         g.db.commit()
@@ -930,6 +950,9 @@ def _storage_bins_post():
         "warehouse_id": warehouse_id,
         "zone_code": zone_code,
         "zone_created": zone_will_be_created,
+        "supports_replace": True,
+        "existing_bins": [dict(row._mapping) for row in existing_rows] if dry_run else [],
+        "retired": len(retired) if replace else 0,
         "desired": len(validated),
         "created": created,
         "updated": updated,

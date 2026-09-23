@@ -3,6 +3,8 @@ import { useScrollToTop } from '@react-navigation/native';
 import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
+import UnknownProductDiscovery from '../components/UnknownProductDiscovery';
+import { addDiscoveredCountItem, findOrDiscoverCountItem } from '../utils/inventoryDiscovery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
@@ -19,6 +21,11 @@ export default function CountScreen({ navigation }) {
   const { warehouseId } = useAuth();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
+  const [unknownEan, setUnknownEan] = useState(null);
+  const discoveryResolver = useRef(null);
+  const discover = useCallback(ean => new Promise(resolve => { discoveryResolver.current = resolve; setUnknownEan(ean); }), []);
+  const finishDiscovery = item => { discoveryResolver.current?.(item); discoveryResolver.current = null; setUnknownEan(null); };
+  useEffect(() => () => { discoveryResolver.current?.(null); discoveryResolver.current = null; }, []);
   const [countId, setCountId] = useState(null);
   const [binCode, setBinCode] = useState('');
   const [lines, setLines] = useState([]);
@@ -104,26 +111,13 @@ export default function CountScreen({ navigation }) {
     if (index === -1) {
       // Unexpected item  -  look up by barcode and add as new line
       try {
-        const resp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
-        if (!resp.data?.item) {
-          showError('Item not found');
-          return;
-        }
-        const foundItem = resp.data.item;
-        setLines((prev) => [...prev, {
-          count_line_id: null,
-          item_id: foundItem.item_id,
-          sku: foundItem.sku,
-          item_name: foundItem.item_name,
-          upc: foundItem.upc,
-          expected_quantity: 0,
-          counted_quantity: '1',
-          unexpected: true,
-        }]);
+        const foundItem = await findOrDiscoverCountItem(client, barcode, discover);
+        if (!foundItem) return;
+        setLines(prev => addDiscoveredCountItem(prev, foundItem, 1));
         setTurboStatus(`${foundItem.sku}: 1 counted (unexpected)`);
         try { Vibration.vibrate([0, 100, 50, 100]); } catch {}
-      } catch {
-        showError('Item not found');
+      } catch (err) {
+        showError(err.message || 'Item not found');
       }
       return;
     }
@@ -143,9 +137,9 @@ export default function CountScreen({ navigation }) {
 
       return updated;
     });
-  }, [lines]);
+  }, [lines, discover, showError]);
 
-  const [enqueueTurbo] = useScanQueue(processTurboScan, errorRef);
+  const [enqueueTurbo, processingScan] = useScanQueue(processTurboScan, errorRef);
 
   const handleScanItem = mode === 'turbo' ? enqueueTurbo : undefined;
 
@@ -158,32 +152,21 @@ export default function CountScreen({ navigation }) {
       return;
     }
     try {
-      const resp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
-      if (!resp.data?.item) {
-        showError('Item not found');
-        return;
-      }
-      const foundItem = resp.data.item;
-      setLines((prev) => [...prev, {
-        count_line_id: null,
-        item_id: foundItem.item_id,
-        sku: foundItem.sku,
-        item_name: foundItem.item_name,
-        upc: foundItem.upc,
-        expected_quantity: 0,
-        counted_quantity: '0',
-        unexpected: true,
-      }]);
-    } catch {
-      showError('Item not found');
+      const foundItem = await findOrDiscoverCountItem(client, barcode, discover);
+      if (!foundItem) return;
+      setLines(prev => addDiscoveredCountItem(prev, foundItem, 0));
+    } catch (err) {
+      showError(err.message || 'Item not found');
     }
   };
+
+  const [enqueueStandard, processingStandard] = useScanQueue(handleAddUnexpected, errorRef);
 
   const handleSubmit = async () => {
     // Guard against a double-tap firing two submits: a second POST for the
     // same count would re-insert the unexpected lines and double-count
     // inventory on approval (the backend now also locks the count row).
-    if (submitting) return;
+    if (submitting || unknownEan || processingScan || processingStandard) return;
     setSubmitting(true);
     try {
       const countLines = lines.map((l) => {
@@ -221,12 +204,13 @@ export default function CountScreen({ navigation }) {
 
   return (
     <View style={screenStyles.screen}>
+      {unknownEan && <UnknownProductDiscovery key={unknownEan} ean={unknownEan} countId={countId} onDone={finishDiscovery} />}
       <ScreenHeader
         title="CYCLE COUNT"
         onBack={() => navigation.goBack()}
         right={
           countId && !submitted ? (
-            <TouchableOpacity style={screenStyles.menuBtn} onPress={() => setShowModeMenu(true)}>
+            <TouchableOpacity style={screenStyles.menuBtn} disabled={processingScan || processingStandard || !!unknownEan} onPress={() => setShowModeMenu(true)}>
               <Text style={screenStyles.menuIcon}>{'\u22ee'}</Text>
             </TouchableOpacity>
           ) : undefined
@@ -235,7 +219,7 @@ export default function CountScreen({ navigation }) {
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {!countId ? (
-          <ScanInput placeholder="SCAN BIN" onScan={handleScanBin} disabled={scanDisabled} />
+          <ScanInput placeholder="SCAN BIN" onScan={handleScanBin} disabled={scanDisabled || !!unknownEan} />
         ) : submitted ? (
           <View style={styles.doneSection}>
             <Text style={doneStyles.check}>{'\u2713'}</Text>
@@ -255,7 +239,7 @@ export default function CountScreen({ navigation }) {
 
             {mode === 'turbo' ? (
               <>
-                <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled} suppressRefocus={qtyFocused} />
+                <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled || !!unknownEan} suppressRefocus={qtyFocused} />
                 {turboStatus !== '' && (
                   <View style={styles.turboCard}>
                     <Text style={styles.turboText}>{turboStatus}</Text>
@@ -263,7 +247,7 @@ export default function CountScreen({ navigation }) {
                 )}
               </>
             ) : (
-              <ScanInput placeholder="SCAN UNEXPECTED ITEM" onScan={handleAddUnexpected} disabled={scanDisabled} suppressRefocus={qtyFocused} />
+              <ScanInput placeholder="SCAN UNEXPECTED ITEM" onScan={enqueueStandard} disabled={scanDisabled || !!unknownEan} suppressRefocus={qtyFocused} />
             )}
 
             {lines.map((line, index) => {
@@ -314,7 +298,7 @@ export default function CountScreen({ navigation }) {
       {/* Bottom bar */}
       {countId && !submitted && (
         <View style={screenStyles.bottomBar}>
-          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
+          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || !!unknownEan || processingScan || processingStandard}>
             <Text style={buttonStyles.buttonPrimaryText}>{submitting ? 'SUBMITTING...' : 'SUBMIT COUNT'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={() => navigation.goBack()}>

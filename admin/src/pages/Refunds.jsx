@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
@@ -17,24 +17,27 @@ export default function Refunds() {
   const [refunds, setRefunds] = useState([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [lines, setLines] = useState([]);
 
-  useEffect(() => {
-    loadRefunds();
-  }, [statusFilter, search]);
-
-  async function loadRefunds() {
-    const qp = new URLSearchParams({ order_type: 'refund', per_page: '50' });
+  const loadRefunds = useCallback(async () => {
+    const qp = new URLSearchParams({ order_type: 'refund', page: String(page), per_page: '10' });
     if (statusFilter !== 'All') qp.set('status', statusFilter);
     if (search) qp.set('q', search);
     const res = await api.get(`/admin/sales-orders?${qp}`);
     if (res?.ok) {
       const data = await res.json();
       setRefunds(data.sales_orders || []);
+      setPagination({ page: data.page, pages: data.pages, total: data.total });
     }
-  }
+  }, [page, search, statusFilter]);
+
+  useEffect(() => {
+    loadRefunds();
+  }, [loadRefunds]);
 
   async function openRefund(refund) {
     setSelected(refund);
@@ -69,7 +72,7 @@ export default function Refunds() {
           className="form-select"
           style={{ width: 180 }}
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
         >
           {REFUND_STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>{s === 'All' ? 'All statuses' : s}</option>
@@ -80,13 +83,15 @@ export default function Refunds() {
           style={{ width: 260 }}
           placeholder="Search by refund number"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
       </div>
       <DataTable
         rowKey="so_id"
         columns={columns}
         data={refunds}
+        pagination={pagination}
+        onPageChange={setPage}
         onRowClick={openRefund}
         clickColumn="so_number"
         emptyMessage="No refunds found"

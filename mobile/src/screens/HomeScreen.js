@@ -17,6 +17,7 @@ const FUNCTIONS = [
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
   { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
+  { key: 'stock-entry', permission: 'receive', label: 'LOCAȚII ȘI STOC', sub: 'Scanează locații, EAN și cantități', screen: 'StockEntry', accent: 'copper' },
   { key: 'putaway', label: 'DEPOZITARE', sub: 'Așezare în locație', screen: 'PutAway', accent: 'copper' },
   { key: 'transfer', label: 'TRANSFER', sub: 'Dintr-o locație în alta', screen: 'Transfer', accent: 'gray' },
   { key: 'count', label: 'INVENTAR', sub: 'Numără stocul', screen: 'Count', accent: 'gray' },
@@ -241,7 +242,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const visibleFunctions = FUNCTIONS.filter(
-    (fn) => allowedFunctions.includes(fn.key)
+    (fn) => allowedFunctions.includes(fn.permission || fn.key)
   );
 
   const getBadgeCount = (key) => badges[key] || 0;
@@ -494,7 +495,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.40.1 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.42.0 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sentry WMS",
     "slug": "sentry-wms",
-    "version": "1.41.3",
+    "version": "1.42.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +22,7 @@
         "backgroundColor": "#0b63d6"
       },
       "package": "ro.autosavcar.sentrywms",
-      "versionCode": 24,
+      "versionCode": 26,
       "permissions": [
         "INTERNET",
         "VIBRATE",
@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permite aplicației Sentry WMS să folosească camera pentru scanarea etichetelor.",
+          "cameraPermission": "Permite aplica\u021biei Sentry WMS s\u0103 foloseasc\u0103 camera pentru scanarea etichetelor.",
           "recordAudioAndroid": false
         }
       ],
