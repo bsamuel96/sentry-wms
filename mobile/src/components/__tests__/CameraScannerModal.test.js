@@ -25,27 +25,26 @@ describe('phone camera scanner', () => {
     expect(componentSource).toMatch(/setScanLocked\(true\)/);
   });
 
-  it('captures one photo on demand and processes that stable frame', () => {
-    expect(componentSource).toMatch(/takePictureAsync/);
-    expect(componentSource).toMatch(/scanFromURLAsync\(photo\.uri, BARCODE_TYPES\)/);
-    expect(componentSource).toMatch(/withOperationTimeout/);
-    expect(componentSource).toMatch(/CAPTURE_TIMEOUT_MS/);
-    expect(componentSource).toMatch(/DECODE_TIMEOUT_MS/);
-    expect(componentSource).toMatch(/accessibilityLabel="Fotografiază și procesează codul"/);
+  it('does not capture a photo or perform delayed file decoding', () => {
+    expect(componentSource).not.toMatch(/takePictureAsync/);
+    expect(componentSource).not.toMatch(/scanFromURLAsync/);
+    expect(componentSource).not.toMatch(/withOperationTimeout/);
   });
 
-  it('arms the native Android detector only after the capture button is pressed', () => {
+  it('arms the instant native detector only after the scan button is pressed', () => {
     expect(componentSource).toMatch(/barcodeScannerSettings=\{\{ barcodeTypes: BARCODE_TYPES \}\}/);
     expect(componentSource).toMatch(
-      /onBarcodeScanned=\{processing && !scanLocked \? handleBarcodeScanned : undefined\}/,
+      /onBarcodeScanned=\{scanArmed && !scanLocked \? handleBarcodeScanned : undefined\}/,
     );
+    expect(componentSource).toMatch(/onPress=\{armNativeScanner\}/);
+    expect(componentSource).toMatch(/accessibilityLabel="Pornește scanarea codului"/);
   });
 
-  it('waits for the camera preview and unlocks stalled processing for a retry', () => {
+  it('waits for the camera preview before the detector can be armed', () => {
     expect(componentSource).toMatch(/onCameraReady=\{handleCameraReady\}/);
-    expect(componentSource).toMatch(/disabled=\{processing \|\| scanLocked \|\| !cameraReady\}/);
-    expect(componentSource).toMatch(/Camera a fost deblocată; fotografiază din nou/);
-    expect(componentSource).toMatch(/processingRef\.current = false/);
+    expect(componentSource).toMatch(/disabled=\{scanArmed \|\| scanLocked \|\| !cameraReady\}/);
+    expect(componentSource).toMatch(/APASĂ PENTRU SCANARE/);
+    expect(componentSource).toMatch(/SCANEAZĂ ACUM…/);
   });
 
   it('declares the native dependency and camera permission', () => {
