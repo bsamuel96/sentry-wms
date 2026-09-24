@@ -24,6 +24,12 @@ export default function Bins() {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [generatorBusy, setGeneratorBusy] = useState(false);
+  const [generatorResult, setGeneratorResult] = useState(null);
+  const [generator, setGenerator] = useState({
+    zone_id: '', aisles: 'A', rows: 'a,b,c', position_from: '1', position_to: '10', level_num: '', bin_type: 'Pickable',
+  });
 
   useEffect(() => { if (warehouseId) { loadBins(); loadZones(); } }, [warehouseId, search, page]);  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -166,6 +172,46 @@ export default function Bins() {
     }
   }
 
+  async function generateLocations() {
+    setError('');
+    setGeneratorResult(null);
+    const split = (value) => [...new Set(String(value || '').split(',').map((part) => part.trim()).filter(Boolean))];
+    const aisles = split(generator.aisles);
+    const rowsToCreate = split(generator.rows);
+    const positionFrom = Number(generator.position_from);
+    const positionTo = Number(generator.position_to);
+    if (!generator.zone_id || !aisles.length || !rowsToCreate.length || !Number.isInteger(positionFrom) || !Number.isInteger(positionTo) || positionFrom < 1 || positionTo < positionFrom) {
+      setError('Completează zona, rândurile/culoarele, rafturile și un interval valid de coloane.');
+      return;
+    }
+    const count = aisles.length * rowsToCreate.length * (positionTo - positionFrom + 1);
+    if (count > 5000) {
+      setError('Poți genera maximum 5000 de locații într-o operație.');
+      return;
+    }
+    setGeneratorBusy(true);
+    try {
+      const res = await api.post('/admin/bins/generate', {
+        warehouse_id: Number(warehouseId),
+        zone_id: Number(generator.zone_id),
+        aisles,
+        rows: rowsToCreate,
+        position_from: positionFrom,
+        position_to: positionTo,
+        level_num: generator.level_num.trim() || null,
+        bin_type: generator.bin_type,
+      });
+      const data = await res?.json();
+      if (!res?.ok) throw new Error(data?.error || 'Locațiile nu au putut fi generate.');
+      setGeneratorResult(data);
+      await loadBins();
+    } catch (generateError) {
+      setError(generateError.message || 'Locațiile nu au putut fi generate.');
+    } finally {
+      setGeneratorBusy(false);
+    }
+  }
+
   const columns = [
     { key: 'bin_code', label: 'Bin Code', mono: true },
     { key: 'bin_barcode', label: 'Barcode', mono: true },
@@ -275,6 +321,7 @@ export default function Bins() {
           {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
         <Link className="btn" to="/data/labels" style={{ marginRight: 8 }}>Etichete cod de bare</Link>
+        <button className="btn" onClick={() => { setShowGenerator(true); setGeneratorResult(null); setError(''); }} style={{ marginRight: 8 }}>Generează locații</button>
         <button className="btn btn-primary" onClick={() => { setForm({ is_active: true }); setShowCreate(true); setError(''); }}>New Bin</button>
       </PageHeader>
       <DataTable rowKey="bin_id" columns={columns} data={bins} pagination={pagination} onPageChange={setPage} onRowClick={viewBin} />
@@ -338,6 +385,47 @@ export default function Bins() {
           }
         >
           {renderForm()}
+        </Modal>
+      )}
+
+      {showGenerator && (
+        <Modal
+          title="Generează rânduri, rafturi și coloane"
+          onClose={() => { setShowGenerator(false); setError(''); }}
+          footer={(
+            <>
+              <button className="btn" onClick={() => { setShowGenerator(false); setError(''); }}>Închide</button>
+              <button className="btn btn-primary" onClick={generateLocations} disabled={generatorBusy}>{generatorBusy ? 'Se generează…' : 'Generează locațiile'}</button>
+            </>
+          )}
+        >
+          <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Exemplu: rând A + raft a + coloana 1 generează codul <span className="mono">A-a-1</span>. Separă valorile multiple prin virgulă.</p>
+          {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
+          {generatorResult && <div className="alert alert-success" role="status">{generatorResult.created} locații create · {generatorResult.skipped} duplicate omise.</div>}
+          <div className="form-row">
+            <div className="form-group">
+              <label>Zonă</label>
+              <select className="form-select" value={generator.zone_id} onChange={(e) => setGenerator({ ...generator, zone_id: e.target.value })}>
+                <option value="">Selectează zona</option>
+                {zones.map((zone) => <option key={zone.zone_id} value={zone.zone_id}>{zone.zone_code} · {zone.zone_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Tip locație</label>
+              <select className="form-select" value={generator.bin_type} onChange={(e) => setGenerator({ ...generator, bin_type: e.target.value })}>
+                {BIN_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Rânduri / culoare</label><input className="form-input" value={generator.aisles} onChange={(e) => setGenerator({ ...generator, aisles: e.target.value })} placeholder="A,B,C" /></div>
+            <div className="form-group"><label>Rafturi</label><input className="form-input" value={generator.rows} onChange={(e) => setGenerator({ ...generator, rows: e.target.value })} placeholder="a,b,c" /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Coloană de la</label><input className="form-input" type="number" min="1" value={generator.position_from} onChange={(e) => setGenerator({ ...generator, position_from: e.target.value })} /></div>
+            <div className="form-group"><label>Coloană până la</label><input className="form-input" type="number" min="1" value={generator.position_to} onChange={(e) => setGenerator({ ...generator, position_to: e.target.value })} /></div>
+          </div>
+          <div className="form-group"><label>Nivel (opțional)</label><input className="form-input" value={generator.level_num} onChange={(e) => setGenerator({ ...generator, level_num: e.target.value })} placeholder="Lasă gol pentru A-a-1" /></div>
         </Modal>
       )}
     </div>

@@ -250,6 +250,28 @@ class TestBins:
         }, headers=auth_headers)
         assert resp.status_code == 400
 
+    def test_generate_bin_layout_and_skip_existing_codes(self, client, auth_headers):
+        payload = {
+            "zone_id": 2,
+            "warehouse_id": 1,
+            "aisles": ["GENA"],
+            "rows": ["a", "b"],
+            "position_from": 1,
+            "position_to": 2,
+            "bin_type": "Pickable",
+        }
+        created = client.post("/api/admin/bins/generate", json=payload, headers=auth_headers)
+        assert created.status_code == 201, created.get_data(as_text=True)
+        assert created.get_json()["created"] == 4
+        assert {row[0] for row in query("SELECT bin_code FROM bins WHERE bin_code LIKE 'GENA-%'")} == {
+            "GENA-a-1", "GENA-a-2", "GENA-b-1", "GENA-b-2",
+        }
+
+        repeated = client.post("/api/admin/bins/generate", json=payload, headers=auth_headers)
+        assert repeated.status_code == 201
+        assert repeated.get_json()["created"] == 0
+        assert repeated.get_json()["skipped"] == 4
+
     def test_update_bin_pick_sequence(self, client, auth_headers):
         resp = client.put("/api/admin/bins/3", json={"pick_sequence": 999}, headers=auth_headers)
         assert resp.status_code == 200

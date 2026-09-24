@@ -41,6 +41,7 @@ export default function CatalogMatching() {
   const [bulkResult, setBulkResult] = useState(null);
   const [error, setError] = useState('');
   const [matchError, setMatchError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -111,6 +112,8 @@ export default function CatalogMatching() {
 
   async function chooseMatch(match) {
     if (!selected || savingId) return;
+    const discoveryId = Number(selected.discovery_id);
+    const scannedCode = selected.ean;
     const equivalent = match.matchType !== 'ean';
     if (equivalent && !window.confirm(`Confirmi că produsul fizic cu codul ${selected.ean} este ${match.brand} ${match.code}?`)) return;
     setSavingId(String(match.id));
@@ -126,13 +129,22 @@ export default function CatalogMatching() {
         const payload = await response?.json();
         throw new Error(payload?.error || 'Echivalarea nu a putut fi salvată.');
       }
+      setRows((current) => status === 'PENDING'
+        ? current.filter((row) => Number(row.discovery_id) !== discoveryId)
+        : current.map((row) => Number(row.discovery_id) === discoveryId
+          ? { ...row, status: 'MATCHED', item_name: [match.brand, match.name].filter(Boolean).join(' · '), tecdoc_code: match.code, tecdoc_brand: match.brand, tecdoc_name: match.name }
+          : row));
+      if (status === 'PENDING') {
+        setPagination((current) => current ? { ...current, total: Math.max(0, current.total - 1) } : current);
+      }
+      setSuccess(`${scannedCode} a fost echivalat cu ${[match.brand, match.code].filter(Boolean).join(' ')}.`);
       setSelected(null);
       setSelectedIds((current) => {
         const next = new Set(current);
-        next.delete(Number(selected.discovery_id));
+        next.delete(discoveryId);
         return next;
       });
-      loadQueue();
+      await loadQueue();
     } catch (saveError) {
       setMatchError(saveError.message || 'Echivalarea nu a putut fi salvată.');
     } finally {
@@ -287,6 +299,14 @@ export default function CatalogMatching() {
           {bulkLoading ? 'Se echivalează…' : `Echivalează automat după EAN (${selectedIds.size})`}
         </button>
       </div>
+      {success ? (
+        <div className="alert alert-success" role="status">
+          {success}{' '}
+          <button type="button" className="btn btn-sm" onClick={() => { setStatus('MATCHED'); setPage(1); setSuccess(''); }}>
+            Vezi echivalatele
+          </button>
+        </div>
+      ) : null}
       {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       {bulkResult ? (
         <div className={`alert ${bulkResult.failed ? 'alert-error' : 'alert-success'}`} role="status">

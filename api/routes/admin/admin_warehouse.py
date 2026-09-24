@@ -10,7 +10,7 @@ from constants import ACTION_TRANSFER
 from middleware.auth_middleware import require_admin_or_page_permission, require_auth
 from middleware.db import with_db
 from routes.admin import VALID_BIN_TYPES, VALID_ZONE_TYPES, admin_bp
-from schemas.bins import CreateBinRequest, UpdateBinRequest
+from schemas.bins import CreateBinRequest, GenerateBinsRequest, UpdateBinRequest
 from schemas.warehouses import CreateWarehouseRequest, InterWarehouseTransferRequest, UpdateWarehouseRequest
 from schemas.zones import CreateZoneRequest, SetupWarehouseAreasRequest, UpdateZoneRequest
 from services.audit_service import write_audit_log
@@ -490,6 +490,83 @@ def create_bin(validated):
         "aisle": row.aisle, "row_num": row.row_num, "level_num": row.level_num,
         "position_num": row.position_num, "pick_sequence": row.pick_sequence,
         "putaway_sequence": row.putaway_sequence, "is_active": row.is_active,
+    }), 201
+
+
+@admin_bp.route("/bins/generate", methods=["POST"])
+@require_auth
+@require_admin_or_page_permission("bins")
+@validate_body(GenerateBinsRequest)
+@with_db
+def generate_bins(validated):
+    data = validated.model_dump()
+    zone = g.db.execute(text("""
+        SELECT zone_id, warehouse_id, zone_code, zone_name
+        FROM zones
+        WHERE zone_id = :zid AND warehouse_id = :wid AND is_active = TRUE
+    """), {"zid": data["zone_id"], "wid": data["warehouse_id"]}).fetchone()
+    if not zone:
+        return jsonify({"error": "Zona nu există, este inactivă sau aparține altui depozit."}), 422
+
+    existing = {
+        row.bin_code.casefold()
+        for row in g.db.execute(
+            text("SELECT bin_code FROM bins WHERE warehouse_id = :wid"),
+            {"wid": data["warehouse_id"]},
+        ).fetchall()
+    }
+    created = []
+    skipped = []
+    sequence = data["sequence_start"]
+    insert_stmt = text("""
+        INSERT INTO bins (
+            zone_id, warehouse_id, bin_code, bin_barcode, bin_type,
+            aisle, row_num, level_num, position_num,
+            pick_sequence, putaway_sequence, description, external_id
+        ) VALUES (
+            :zone_id, :warehouse_id, :bin_code, :bin_code, :bin_type,
+            :aisle, :row_num, :level_num, :position_num,
+            :sequence, :sequence, :description, :external_id
+        )
+        RETURNING bin_id, bin_code
+    """)
+    for aisle in data["aisles"]:
+        for row_num in data["rows"]:
+            for position in range(data["position_from"], data["position_to"] + 1):
+                parts = [aisle, row_num]
+                if data.get("level_num"):
+                    parts.append(data["level_num"])
+                parts.append(str(position))
+                bin_code = "-".join(parts)
+                if len(bin_code) > 64:
+                    return jsonify({"error": f"Codul generat este prea lung: {bin_code}"}), 422
+                if bin_code.casefold() in existing:
+                    skipped.append(bin_code)
+                    continue
+                result = g.db.execute(insert_stmt, {
+                    "zone_id": data["zone_id"],
+                    "warehouse_id": data["warehouse_id"],
+                    "bin_code": bin_code,
+                    "bin_type": data["bin_type"],
+                    "aisle": aisle,
+                    "row_num": row_num,
+                    "level_num": data.get("level_num"),
+                    "position_num": str(position),
+                    "sequence": sequence,
+                    "description": f"{zone.zone_name}: rând {aisle}, raft {row_num}, coloană {position}",
+                    "external_id": str(uuid.uuid4()),
+                }).fetchone()
+                created.append({"bin_id": result.bin_id, "bin_code": result.bin_code})
+                existing.add(bin_code.casefold())
+                sequence += 1
+
+    g.db.commit()
+    return jsonify({
+        "ok": True,
+        "created": len(created),
+        "skipped": len(skipped),
+        "locations": created,
+        "skipped_codes": skipped,
     }), 201
 
 
