@@ -25,6 +25,13 @@ describe('phone camera scanner', () => {
     expect(componentSource).toMatch(/setScanLocked\(true\)/);
   });
 
+  it('captures one photo on demand and processes that stable frame', () => {
+    expect(componentSource).toMatch(/takePictureAsync/);
+    expect(componentSource).toMatch(/scanFromURLAsync\(photo\.uri, BARCODE_TYPES\)/);
+    expect(componentSource).toMatch(/accessibilityLabel="Fotografiază și procesează codul"/);
+    expect(componentSource).not.toMatch(/onBarcodeScanned=\{/);
+  });
+
   it('declares the native dependency and camera permission', () => {
     expect(packageJson.dependencies['expo-camera']).toBe('~17.0.10');
     expect(appConfig.expo.android.permissions).toContain('CAMERA');

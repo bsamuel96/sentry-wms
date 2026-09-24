@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useScrollToTop } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
@@ -33,8 +33,9 @@ export default function StockEntryScreen({ navigation }) {
   const [entryKey, setEntryKey] = useState('');
   const [itemPreview, setItemPreview] = useState(null);
   const [quantity, setQuantity] = useState('1');
-  const [saving, setSaving] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [lastEntries, setLastEntries] = useState([]);
+  const syncingKeysRef = useRef(new Set());
   const { error, scanDisabled, showError, clearError } = useScreenError();
 
   const quantityNumber = useMemo(() => Math.max(0, Number.parseInt(quantity, 10) || 0), [quantity]);
@@ -59,8 +60,8 @@ export default function StockEntryScreen({ navigation }) {
   }
 
   async function registerBin() {
-    if (!warehouseId || !newBinCode || saving) return;
-    setSaving(true);
+    if (!warehouseId || !newBinCode || registering) return;
+    setRegistering(true);
     try {
       const response = await client.post('/api/inventory/stock-entry/bin', {
         warehouse_id: warehouseId,
@@ -72,7 +73,7 @@ export default function StockEntryScreen({ navigation }) {
     } catch (registerError) {
       showError(registerError.response?.data?.error || 'Locația nu a putut fi înregistrată.');
     } finally {
-      setSaving(false);
+      setRegistering(false);
     }
   }
 
@@ -111,34 +112,66 @@ export default function StockEntryScreen({ navigation }) {
     setQuantity(String(Math.max(1, quantityNumber + delta)));
   }
 
-  async function addToBin() {
-    if (!warehouseId || !bin?.bin_id || !ean || !entryKey || quantityNumber < 1 || saving) return;
-    setSaving(true);
+  async function syncEntry(entry) {
+    if (syncingKeysRef.current.has(entry.entryKey)) return;
+    syncingKeysRef.current.add(entry.entryKey);
+    setLastEntries((current) => current.map((row) => (
+      row.id === entry.id ? { ...row, syncing: true, failed: false } : row
+    )));
     try {
       const response = await client.post('/api/inventory/stock-entry', {
-        warehouse_id: warehouseId,
-        bin_id: bin.bin_id,
-        barcode: ean,
-        quantity: quantityNumber,
+        warehouse_id: entry.warehouseId,
+        bin_id: entry.binId,
+        barcode: entry.ean,
+        quantity: entry.quantity,
         // Keep the same key after a timeout/error so tapping again cannot add
         // the physical pieces twice when the first request actually committed.
-        idempotency_key: entryKey,
+        idempotency_key: entry.entryKey,
       }, { timeout: 20000 });
       const result = response.data;
-      setLastEntries((current) => [{
-        id: result.stock_entry_id,
-        sku: result.item?.sku,
-        name: result.item?.item_name,
+      setLastEntries((current) => current.map((row) => (row.id === entry.id ? {
+        ...row,
+        serverId: result.stock_entry_id,
+        sku: result.item?.sku || row.sku,
+        name: result.item?.item_name || row.name,
         quantity: result.quantity_added,
         total: result.quantity_in_bin,
         pending: result.catalog_status === 'PENDING',
-      }, ...current].slice(0, 8));
-      clearProduct();
+        syncing: false,
+        failed: false,
+      } : row)));
     } catch (saveError) {
-      showError(saveError.response?.data?.error || 'Produsul nu a putut fi introdus în stoc.');
+      setLastEntries((current) => current.map((row) => (
+        row.id === entry.id ? { ...row, syncing: false, failed: true } : row
+      )));
+      showError(saveError.response?.data?.error || 'Produsul nu a putut fi introdus în stoc. Apasă Reîncearcă în lista sesiunii.');
     } finally {
-      setSaving(false);
+      syncingKeysRef.current.delete(entry.entryKey);
     }
+  }
+
+  function addToBin() {
+    if (!warehouseId || !bin?.bin_id || !ean || !entryKey || !itemPreview || quantityNumber < 1) return;
+    const optimisticEntry = {
+      id: `pending-${entryKey}`,
+      entryKey,
+      warehouseId,
+      binId: bin.bin_id,
+      binCode: bin.bin_code,
+      ean,
+      sku: itemPreview.sku || ean,
+      name: itemPreview.item_name || 'Produs',
+      quantity: quantityNumber,
+      total: null,
+      pending: Boolean(itemPreview.provisional),
+      syncing: true,
+      failed: false,
+    };
+    // Reflect the physical scan immediately. The idempotency key keeps the
+    // background request and any manual retry safe against double stock.
+    setLastEntries((current) => [optimisticEntry, ...current].slice(0, 12));
+    clearProduct();
+    syncEntry(optimisticEntry);
   }
 
   return (
@@ -162,15 +195,15 @@ export default function StockEntryScreen({ navigation }) {
           </View>
         ) : (
           <>
-            <ScanInput placeholder="SCANEAZĂ LOCAȚIA / BIN-UL" onScan={scanBin} disabled={scanDisabled || saving} />
+            <ScanInput placeholder="SCANEAZĂ LOCAȚIA / BIN-UL" onScan={scanBin} disabled={scanDisabled || registering} />
             {newBinCode ? (
               <View style={styles.newBinCard}>
                 <Text style={styles.newBinTitle}>LOCAȚIE NOUĂ: {newBinCode}</Text>
                 <Text style={styles.newBinHint}>Locația nu există încă în Sentry. O poți crea în zona PICK și continua imediat cu produsele.</Text>
-                <TouchableOpacity style={[buttonStyles.buttonPrimary, saving && buttonStyles.buttonDisabled]} onPress={registerBin} disabled={saving}>
-                  <Text style={buttonStyles.buttonPrimaryText}>{saving ? 'SE CREEAZĂ…' : 'ÎNREGISTREAZĂ LOCAȚIA'}</Text>
+                <TouchableOpacity style={[buttonStyles.buttonPrimary, registering && buttonStyles.buttonDisabled]} onPress={registerBin} disabled={registering}>
+                  <Text style={buttonStyles.buttonPrimaryText}>{registering ? 'SE CREEAZĂ…' : 'ÎNREGISTREAZĂ LOCAȚIA'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={() => setNewBinCode('')} disabled={saving}>
+                <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={() => setNewBinCode('')} disabled={registering}>
                   <Text style={buttonStyles.buttonSecondaryText}>SCANEAZĂ DIN NOU</Text>
                 </TouchableOpacity>
               </View>
@@ -184,7 +217,7 @@ export default function StockEntryScreen({ navigation }) {
         </View>
 
         {bin && !ean ? (
-          <ScanInput placeholder="SCANEAZĂ CODUL PRODUSULUI" onScan={scanProduct} disabled={scanDisabled || saving} />
+          <ScanInput placeholder="SCANEAZĂ CODUL PRODUSULUI" onScan={scanProduct} disabled={scanDisabled || registering} />
         ) : null}
 
         {ean ? (
@@ -212,13 +245,13 @@ export default function StockEntryScreen({ navigation }) {
             </View>
 
             <TouchableOpacity
-              style={[buttonStyles.buttonPrimary, (saving || quantityNumber < 1) && buttonStyles.buttonDisabled]}
+              style={[buttonStyles.buttonPrimary, (!itemPreview || quantityNumber < 1) && buttonStyles.buttonDisabled]}
               onPress={addToBin}
-              disabled={saving || quantityNumber < 1}
+              disabled={!itemPreview || quantityNumber < 1}
             >
-              <Text style={buttonStyles.buttonPrimaryText}>{saving ? 'SE SALVEAZĂ…' : `ADAUGĂ ÎN ${bin?.bin_code}`}</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{`ADAUGĂ ÎN ${bin?.bin_code}`}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={clearProduct} disabled={saving}>
+            <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={clearProduct}>
               <Text style={buttonStyles.buttonSecondaryText}>ANULEAZĂ PRODUSUL</Text>
             </TouchableOpacity>
           </View>
@@ -232,11 +265,17 @@ export default function StockEntryScreen({ navigation }) {
                 <View style={styles.sessionCopy}>
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
                   <Text style={styles.sessionName}>{entry.name}</Text>
-                  {entry.pending ? <Text style={styles.sessionPending}>În așteptare TecDoc</Text> : null}
+                  {entry.syncing ? <Text style={styles.sessionSyncing}>Se sincronizează…</Text> : null}
+                  {entry.failed ? (
+                    <TouchableOpacity onPress={() => syncEntry(entry)} accessibilityRole="button" accessibilityLabel={`Reîncearcă salvarea ${entry.sku}`}>
+                      <Text style={styles.sessionFailed}>Salvare eșuată · REÎNCEARCĂ</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {!entry.syncing && !entry.failed && entry.pending ? <Text style={styles.sessionPending}>În așteptare TecDoc</Text> : null}
                 </View>
                 <View style={styles.sessionQuantity}>
                   <Text style={styles.sessionAdded}>+{entry.quantity}</Text>
-                  <Text style={styles.sessionTotal}>{entry.total} în locație</Text>
+                  <Text style={styles.sessionTotal}>{entry.total == null ? entry.binCode : `${entry.total} în locație`}</Text>
                 </View>
               </View>
             ))}
@@ -286,6 +325,8 @@ const styles = StyleSheet.create({
   sessionSku: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sessionPending: { color: colors.warning, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  sessionSyncing: { color: colors.accentRed, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  sessionFailed: { color: colors.danger, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginTop: 5 },
   sessionQuantity: { alignItems: 'flex-end' },
   sessionAdded: { color: colors.success, fontFamily: fonts.mono, fontSize: 16, fontWeight: '800' },
   sessionTotal: { color: colors.textMuted, fontSize: 10, marginTop: 2 },

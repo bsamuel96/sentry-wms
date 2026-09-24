@@ -1,4 +1,7 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import process from 'node:process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -90,5 +93,15 @@ describe('introducere marfă prin scanare în web', () => {
       zone_code: 'PICK',
     }));
     expect(await screen.findByText('Locația B-b-2 a fost creată.')).toBeInTheDocument();
+  });
+});
+
+describe('camera web controlată de operator', () => {
+  it('fotografiază cadrul numai la apăsarea butonului și îl procesează cu BarcodeDetector', () => {
+    const source = readFileSync(join(process.cwd(), 'src/components/BarcodeCameraModal.jsx'), 'utf8');
+    expect(source).toContain('Fotografiază și procesează');
+    expect(source).toContain("document.createElement('canvas')");
+    expect(source).toContain('detector.detect(canvas)');
+    expect(source).not.toContain('requestAnimationFrame(inspectFrame)');
   });
 });

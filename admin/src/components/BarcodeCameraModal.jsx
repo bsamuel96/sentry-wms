@@ -20,9 +20,11 @@ const BARCODE_FORMATS = [
 export default function BarcodeCameraModal({ title = 'Scanează codul', onClose, onDetected }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const frameRef = useRef(null);
+  const detectorRef = useRef(null);
   const detectedRef = useRef(false);
   const [error, setError] = useState('');
+  const [ready, setReady] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +42,7 @@ export default function BarcodeCameraModal({ title = 'Scanează codul', onClose,
           : BARCODE_FORMATS;
         const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
         const detector = new BarcodeDetectorApi(formats.length ? { formats } : undefined);
+        detectorRef.current = detector;
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -57,24 +60,7 @@ export default function BarcodeCameraModal({ title = 'Scanează codul', onClose,
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-
-        async function inspectFrame() {
-          if (cancelled || detectedRef.current) return;
-          try {
-            const barcodes = await detector.detect(video);
-            const value = String(barcodes?.[0]?.rawValue || '').trim();
-            if (value) {
-              detectedRef.current = true;
-              onDetected(value);
-              onClose();
-              return;
-            }
-          } catch {
-            // A frame can be unreadable while the camera focuses. Keep trying.
-          }
-          frameRef.current = window.requestAnimationFrame(inspectFrame);
-        }
-        frameRef.current = window.requestAnimationFrame(inspectFrame);
+        if (!cancelled) setReady(true);
       } catch (cameraError) {
         if (!cancelled) {
           const denied = cameraError?.name === 'NotAllowedError';
@@ -88,22 +74,62 @@ export default function BarcodeCameraModal({ title = 'Scanează codul', onClose,
     startCamera();
     return () => {
       cancelled = true;
-      if (frameRef.current) window.cancelAnimationFrame(frameRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
   }, [onClose, onDetected]);
 
+  async function captureAndProcess() {
+    const video = videoRef.current;
+    const detector = detectorRef.current;
+    if (!video || !detector || !ready || processing || detectedRef.current) return;
+
+    setProcessing(true);
+    setError('');
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('capture_unavailable');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const barcodes = await detector.detect(canvas);
+      const value = String(barcodes?.[0]?.rawValue || '').trim();
+      if (!value) {
+        setError('Nu am găsit un cod în fotografie. Apropie eticheta, evită reflexiile și încearcă din nou.');
+        return;
+      }
+      detectedRef.current = true;
+      onDetected(value);
+      onClose();
+    } catch (captureError) {
+      if (captureError?.message !== 'capture_unavailable') {
+        setError('Fotografia nu a putut fi procesată. Ține camera nemișcată și încearcă din nou.');
+      } else {
+        setError('Browserul nu poate captura cadrul camerei. Folosește Chrome actualizat.');
+      }
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   return (
     <Modal
       title={title}
       onClose={onClose}
-      footer={<button type="button" className="btn" onClick={onClose}>Închide</button>}
+      footer={(
+        <>
+          <button type="button" className="btn" onClick={onClose}>Închide</button>
+          <button type="button" className="btn btn-primary" onClick={captureAndProcess} disabled={!ready || processing}>
+            {processing ? 'Se procesează…' : 'Fotografiază și procesează'}
+          </button>
+        </>
+      )}
     >
       <div className="barcode-camera">
         <video ref={videoRef} className="barcode-camera-video" autoPlay muted playsInline aria-label="Imagine cameră pentru scanare" />
         <div className="barcode-camera-target" aria-hidden="true" />
-        <p className="barcode-camera-hint">Încadrează codul în dreptunghi. Citirea se face automat.</p>
+        <p className="barcode-camera-hint">Încadrează clar codul, apoi apasă „Fotografiază și procesează”.</p>
         {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       </div>
     </Modal>

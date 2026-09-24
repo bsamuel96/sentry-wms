@@ -28,10 +28,11 @@ function SkeletonLine({ width = '100%', height = 12, style }) {
 export function OperationGridSkeleton() {
   return (
     <View style={styles.grid} accessibilityRole="progressbar" accessibilityLabel="Se încarcă etapele depozitului">
-      {Array.from({ length: 7 }).map((_, index) => (
-        <View key={index} style={[styles.operationCard, index === 6 && styles.fullCard]}>
-          <SkeletonLine width="58%" height={14} />
-          <SkeletonLine width="82%" height={10} style={styles.lineGap} />
+      {Array.from({ length: 8 }).map((_, index) => (
+        <View key={index} style={[styles.operationCard, index === 7 && styles.fullCard]}>
+          <View style={styles.operationStripe} />
+          <SkeletonLine width="62%" height={14} />
+          <SkeletonLine width="88%" height={11} style={styles.operationLineGap} />
         </View>
       ))}
     </View>
@@ -45,10 +46,10 @@ export function OrderListSkeleton({ count = 5 }) {
         <View key={index} style={styles.orderRow}>
           <View style={styles.orderMain}>
             <SkeletonLine width="42%" height={17} />
-            <SkeletonLine width="70%" height={12} style={styles.lineGap} />
-            <SkeletonLine width="54%" height={10} style={styles.lineGapSmall} />
+            <SkeletonLine width="70%" height={14} style={styles.lineGap} />
+            <SkeletonLine width="54%" height={12} style={styles.lineGapSmall} />
           </View>
-          <SkeletonLine width={82} height={34} />
+          <SkeletonLine width={92} height={36} style={styles.orderAction} />
         </View>
       ))}
     </View>
@@ -75,10 +76,12 @@ const styles = StyleSheet.create({
   lineGapSmall: { marginTop: 7 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   operationCard: {
-    width: '48.5%', minHeight: 82, padding: 14, justifyContent: 'center',
+    width: '48.5%', minHeight: 84, padding: 14, paddingTop: 18, justifyContent: 'center',
     borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
-    backgroundColor: colors.cardBg,
+    backgroundColor: colors.cardBg, overflow: 'hidden',
   },
+  operationStripe: { position: 'absolute', top: 0, left: 0, right: 0, height: 5, backgroundColor: '#b9d3f2' },
+  operationLineGap: { marginTop: 6 },
   fullCard: { width: '100%' },
   orderRow: {
     minHeight: 92, padding: 14, marginBottom: 9, flexDirection: 'row',
@@ -86,6 +89,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.card, backgroundColor: colors.cardBg,
   },
   orderMain: { flex: 1, paddingRight: 16 },
+  orderAction: { borderRadius: 18 },
   busyScreen: {
     flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.background,

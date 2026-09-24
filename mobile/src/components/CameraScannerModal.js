@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import Text from './LocalizedText';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import { colors, fonts, radii } from '../theme/styles';
 
 const BARCODE_TYPES = [
@@ -32,6 +32,9 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const cameraRef = useRef(null);
   const scanLockedRef = useRef(false);
   const permissionRequestedRef = useRef(false);
 
@@ -40,6 +43,8 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
       permissionRequestedRef.current = false;
       scanLockedRef.current = false;
       setScanLocked(false);
+      setProcessing(false);
+      setScanError('');
       setTorchEnabled(false);
       return;
     }
@@ -64,6 +69,29 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
     permissionRequestedRef.current = true;
     requestPermission().catch(() => {});
   }, [requestPermission]);
+
+  const captureAndProcess = useCallback(async () => {
+    if (!cameraRef.current || processing || scanLockedRef.current) return;
+    setProcessing(true);
+    setScanError('');
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.85,
+        shutterSound: false,
+      });
+      const results = await scanFromURLAsync(photo.uri, BARCODE_TYPES);
+      const value = String(results?.[0]?.data || '').trim();
+      if (!value) {
+        setScanError('Nu am găsit un cod în fotografie. Apropie eticheta, evită reflexiile și încearcă din nou.');
+        return;
+      }
+      handleBarcodeScanned({ data: value });
+    } catch {
+      setScanError('Fotografia nu a putut fi procesată. Ține telefonul nemișcat și încearcă din nou.');
+    } finally {
+      if (!scanLockedRef.current) setProcessing(false);
+    }
+  }, [handleBarcodeScanned, processing]);
 
   return (
     <Modal
@@ -96,17 +124,27 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
         ) : permission.granted ? (
           <View style={styles.cameraFrame}>
             <CameraView
+              ref={cameraRef}
               style={StyleSheet.absoluteFill}
               facing="back"
               enableTorch={torchEnabled}
-              barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES }}
-              onBarcodeScanned={scanLocked ? undefined : handleBarcodeScanned}
             />
             <View pointerEvents="none" style={styles.guideOverlay}>
               <View style={styles.scanGuide} />
               <Text style={styles.guideText}>Cod de bare produs, bin, rând sau document</Text>
             </View>
             <View style={styles.cameraActions}>
+              {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
+              <TouchableOpacity
+                style={[styles.captureButton, processing && styles.captureButtonDisabled]}
+                onPress={captureAndProcess}
+                disabled={processing || scanLocked}
+                accessibilityRole="button"
+                accessibilityLabel="Fotografiază și procesează codul"
+              >
+                {processing ? <ActivityIndicator color="#ffffff" /> : <View style={styles.captureButtonInner} />}
+              </TouchableOpacity>
+              <Text style={styles.captureLabel}>{processing ? 'SE PROCESEAZĂ…' : 'FOTOGRAFIAZĂ ȘI PROCESEAZĂ'}</Text>
               <TouchableOpacity
                 style={[styles.torchButton, torchEnabled && styles.torchButtonActive]}
                 onPress={() => setTorchEnabled((current) => !current)}
@@ -205,6 +243,41 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 28,
     alignItems: 'center',
+  },
+  scanError: {
+    maxWidth: 360,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radii.badge,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(127, 29, 29, 0.88)',
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  captureButton: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#ffffff',
+    borderRadius: 36,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  captureButtonDisabled: { opacity: 0.65 },
+  captureButtonInner: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#ffffff' },
+  captureLabel: {
+    marginTop: 8,
+    marginBottom: 12,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 3,
   },
   torchButton: {
     minHeight: 48,
