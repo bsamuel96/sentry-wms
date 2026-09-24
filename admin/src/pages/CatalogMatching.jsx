@@ -22,6 +22,10 @@ function statusTag(status) {
   return <span className={`tag ${className}`}>{statusLabel(status)}</span>;
 }
 
+export function canSearchScannedCodeInTecDoc(value) {
+  return /^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(String(value || '').trim());
+}
+
 export default function CatalogMatching() {
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -67,6 +71,12 @@ export default function CatalogMatching() {
 
   async function findMatches(row = selected, nextReference = reference) {
     if (!row) return;
+    if (!nextReference.trim() && !canSearchScannedCodeInTecDoc(row.ean)) {
+      setMatchError('Introdu codul producătorului sau o referință OE pentru acest cod scanat.');
+      setMatches([]);
+      setSearchedBy('');
+      return;
+    }
     setMatchLoading(true);
     setMatchError('');
     setMatches([]);
@@ -94,13 +104,13 @@ export default function CatalogMatching() {
     setMatches([]);
     setMatchError('');
     setSearchedBy('');
-    if (row.status === 'PENDING') findMatches(row, '');
+    if (row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) findMatches(row, '');
   }
 
   async function chooseMatch(match) {
     if (!selected || savingId) return;
     const equivalent = match.matchType !== 'ean';
-    if (equivalent && !window.confirm(`Confirmi că produsul fizic ${selected.ean} este ${match.brand} ${match.code}?`)) return;
+    if (equivalent && !window.confirm(`Confirmi că produsul fizic cu codul ${selected.ean} este ${match.brand} ${match.code}?`)) return;
     setSavingId(String(match.id));
     setMatchError('');
     try {
@@ -124,7 +134,7 @@ export default function CatalogMatching() {
   }
 
   async function ignoreSelected() {
-    if (!selected || savingId || !window.confirm(`Ignori produsul cu EAN ${selected.ean}?`)) return;
+    if (!selected || savingId || !window.confirm(`Ignori produsul cu codul ${selected.ean}?`)) return;
     setSavingId('ignore');
     setMatchError('');
     try {
@@ -143,7 +153,7 @@ export default function CatalogMatching() {
   }
 
   const columns = useMemo(() => [
-    { key: 'ean', label: 'EAN', mono: true },
+    { key: 'ean', label: 'Cod scanat', mono: true },
     { key: 'item_name', label: 'Produs curent' },
     { key: 'quantity_on_hand', label: 'Cantitate' },
     { key: 'locations', label: 'Locații', render: (row) => (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—' },
@@ -160,13 +170,13 @@ export default function CatalogMatching() {
     <div>
       <PageHeader title="Echivalare TecDoc" />
       <p style={{ margin: '-8px 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Produsele necunoscute introduse din APK rămân în stoc cu EAN-ul scanat până când le confirmi identitatea TecDoc aici.
+        Produsele necunoscute introduse din APK rămân în stoc cu codul scanat până când le confirmi identitatea TecDoc aici.
       </p>
       <div className="filter-bar">
         <select className="form-select" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} style={{ width: 180 }}>
           {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <input className="form-input" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Caută EAN, SKU sau denumire" style={{ maxWidth: 360 }} />
+        <input className="form-input" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
       </div>
       {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       {loading && !rows.length ? <p>Se încarcă…</p> : null}
@@ -185,7 +195,7 @@ export default function CatalogMatching() {
           ) : <button type="button" className="btn" onClick={() => setSelected(null)}>Închide</button>}
         >
           <div className="detail-grid" style={{ marginBottom: 18 }}>
-            <span className="detail-label">EAN scanat</span><span className="mono">{selected.ean}</span>
+            <span className="detail-label">Cod scanat</span><span className="mono">{selected.ean}</span>
             <span className="detail-label">Produs Sentry</span><span>{selected.item_name}</span>
             <span className="detail-label">Stoc</span><span>{selected.quantity_on_hand} buc.</span>
             <span className="detail-label">Locații</span><span>{(selected.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—'}</span>
@@ -197,11 +207,12 @@ export default function CatalogMatching() {
             <>
               <div className="filter-bar" style={{ alignItems: 'flex-end' }}>
                 <label style={{ flex: 1, minWidth: 220 }}>
-                  <span className="detail-label" style={{ display: 'block', marginBottom: 5 }}>Cod producător / OE, dacă EAN-ul nu găsește nimic</span>
+                  <span className="detail-label" style={{ display: 'block', marginBottom: 5 }}>Cod producător / referință OE</span>
                   <input className="form-input" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Ex: C113" style={{ width: '100%' }} />
                 </label>
-                <button type="button" className="btn btn-primary" onClick={() => findMatches()} disabled={matchLoading}>{matchLoading ? 'Se caută…' : 'Caută în TecDoc'}</button>
+                <button type="button" className="btn btn-primary" onClick={() => findMatches()} disabled={matchLoading || (!reference.trim() && !canSearchScannedCodeInTecDoc(selected.ean))}>{matchLoading ? 'Se caută…' : 'Caută în TecDoc'}</button>
               </div>
+              {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Sentry. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
               {matchError ? <div className="alert alert-error" role="alert">{matchError}</div> : null}
               {!matchLoading && !matchError && matches.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Nicio potrivire. Introdu un cod producător sau OE și caută din nou.</p> : null}
               {searchedBy ? <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Căutare: {searchedBy === 'ean' ? 'EAN exact' : 'referință produs'}</p> : null}

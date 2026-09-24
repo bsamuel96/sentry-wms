@@ -19,13 +19,13 @@ def first_bin():
     )[0]
 
 
-def test_unknown_ean_creates_provisional_item_queue_and_inventory_once(client, auth_headers):
+def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_once(client, auth_headers):
     bin_id, warehouse_id, _ = first_bin()
     key = str(uuid.uuid4())
     body = {
         "warehouse_id": warehouse_id,
         "bin_id": bin_id,
-        "ean": "4006381333931",
+        "barcode": "1654644071",
         "quantity": 4,
         "idempotency_key": key,
     }
@@ -49,7 +49,7 @@ def test_unknown_ean_creates_provisional_item_queue_and_inventory_once(client, a
     assert query(
         "SELECT scanned_ean,status FROM item_catalog_discoveries WHERE item_id=%s",
         (item_id,),
-    ) == [("4006381333931", "PENDING")]
+    ) == [("1654644071", "PENDING")]
 
 
 def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
@@ -89,7 +89,7 @@ def test_location_can_be_registered_by_scan_and_replayed(client, auth_headers):
     assert repeated.get_json()["bin"]["bin_id"] == payload["bin"]["bin_id"]
 
 
-def test_stock_entry_rejects_invalid_ean(client, auth_headers):
+def test_stock_entry_rejects_invalid_product_code(client, auth_headers):
     bin_id, warehouse_id, _ = first_bin()
     response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
         "warehouse_id": warehouse_id,

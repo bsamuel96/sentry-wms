@@ -16,6 +16,9 @@ import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "db" / "schema.sql"
+MOBILE_STOCK_ENTRY_MIGRATION_PATH = (
+    REPO_ROOT / "db" / "migrations" / "083_mobile_stock_entry_catalog_queue.sql"
+)
 BOOTSTRAP_LOCK_ID = 7_493_367_791
 
 
@@ -52,6 +55,21 @@ def _ensure_runtime_indexes(cursor) -> None:
             )
         """
     )
+
+
+def _ensure_mobile_stock_entry_schema(cursor) -> None:
+    """Install the additive mobile stock-entry schema on old databases.
+
+    Railway databases created before migration 083 already contain the base
+    tables, so the one-time bootstrap deliberately skips ``schema.sql``.  The
+    migration itself is idempotent and therefore safe on both old and fresh
+    installations.
+    """
+    if not MOBILE_STOCK_ENTRY_MIGRATION_PATH.is_file():
+        raise RuntimeError(
+            f"Mobile stock-entry migration is missing: {MOBILE_STOCK_ENTRY_MIGRATION_PATH}"
+        )
+    cursor.execute(MOBILE_STOCK_ENTRY_MIGRATION_PATH.read_text(encoding="utf-8"))
 
 
 def _seed_minimal_install(cursor, admin_password: str) -> None:
@@ -169,12 +187,17 @@ def main() -> None:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s)", (BOOTSTRAP_LOCK_ID,))
                 if _schema_is_initialized(cursor):
                     _ensure_runtime_indexes(cursor)
-                    print("Sentry WMS database is already initialized; runtime indexes verified.")
+                    _ensure_mobile_stock_entry_schema(cursor)
+                    print(
+                        "Sentry WMS database is already initialized; additive schema and "
+                        "runtime indexes verified."
+                    )
                     return
 
                 cursor.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
                 _seed_minimal_install(cursor, admin_password)
                 _ensure_runtime_indexes(cursor)
+                _ensure_mobile_stock_entry_schema(cursor)
                 print("Sentry WMS schema and minimal admin setup initialized.")
     finally:
         connection.close()

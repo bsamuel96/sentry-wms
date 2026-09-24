@@ -3,8 +3,7 @@ import { useScrollToTop } from '@react-navigation/native';
 import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
-import UnknownProductDiscovery from '../components/UnknownProductDiscovery';
-import { addDiscoveredCountItem, findOrDiscoverCountItem } from '../utils/inventoryDiscovery';
+import { addDiscoveredCountItem, findKnownCountItem } from '../utils/inventoryDiscovery';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
@@ -21,11 +20,6 @@ export default function CountScreen({ navigation }) {
   const { warehouseId } = useAuth();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
-  const [unknownEan, setUnknownEan] = useState(null);
-  const discoveryResolver = useRef(null);
-  const discover = useCallback(ean => new Promise(resolve => { discoveryResolver.current = resolve; setUnknownEan(ean); }), []);
-  const finishDiscovery = item => { discoveryResolver.current?.(item); discoveryResolver.current = null; setUnknownEan(null); };
-  useEffect(() => () => { discoveryResolver.current?.(null); discoveryResolver.current = null; }, []);
   const [countId, setCountId] = useState(null);
   const [binCode, setBinCode] = useState('');
   const [lines, setLines] = useState([]);
@@ -111,8 +105,7 @@ export default function CountScreen({ navigation }) {
     if (index === -1) {
       // Unexpected item  -  look up by barcode and add as new line
       try {
-        const foundItem = await findOrDiscoverCountItem(client, barcode, discover);
-        if (!foundItem) return;
+        const foundItem = await findKnownCountItem(client, barcode);
         setLines(prev => addDiscoveredCountItem(prev, foundItem, 1));
         setTurboStatus(`${foundItem.sku}: 1 counted (unexpected)`);
         try { Vibration.vibrate([0, 100, 50, 100]); } catch {}
@@ -137,7 +130,7 @@ export default function CountScreen({ navigation }) {
 
       return updated;
     });
-  }, [lines, discover, showError]);
+  }, [lines, showError]);
 
   const [enqueueTurbo, processingScan] = useScanQueue(processTurboScan, errorRef);
 
@@ -152,8 +145,7 @@ export default function CountScreen({ navigation }) {
       return;
     }
     try {
-      const foundItem = await findOrDiscoverCountItem(client, barcode, discover);
-      if (!foundItem) return;
+      const foundItem = await findKnownCountItem(client, barcode);
       setLines(prev => addDiscoveredCountItem(prev, foundItem, 0));
     } catch (err) {
       showError(err.message || 'Item not found');
@@ -166,7 +158,7 @@ export default function CountScreen({ navigation }) {
     // Guard against a double-tap firing two submits: a second POST for the
     // same count would re-insert the unexpected lines and double-count
     // inventory on approval (the backend now also locks the count row).
-    if (submitting || unknownEan || processingScan || processingStandard) return;
+    if (submitting || processingScan || processingStandard) return;
     setSubmitting(true);
     try {
       const countLines = lines.map((l) => {
@@ -204,13 +196,12 @@ export default function CountScreen({ navigation }) {
 
   return (
     <View style={screenStyles.screen}>
-      {unknownEan && <UnknownProductDiscovery key={unknownEan} ean={unknownEan} countId={countId} onDone={finishDiscovery} />}
       <ScreenHeader
         title="CYCLE COUNT"
         onBack={() => navigation.goBack()}
         right={
           countId && !submitted ? (
-            <TouchableOpacity style={screenStyles.menuBtn} disabled={processingScan || processingStandard || !!unknownEan} onPress={() => setShowModeMenu(true)}>
+            <TouchableOpacity style={screenStyles.menuBtn} disabled={processingScan || processingStandard} onPress={() => setShowModeMenu(true)}>
               <Text style={screenStyles.menuIcon}>{'\u22ee'}</Text>
             </TouchableOpacity>
           ) : undefined
@@ -219,7 +210,7 @@ export default function CountScreen({ navigation }) {
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {!countId ? (
-          <ScanInput placeholder="SCAN BIN" onScan={handleScanBin} disabled={scanDisabled || !!unknownEan} />
+          <ScanInput placeholder="SCAN BIN" onScan={handleScanBin} disabled={scanDisabled} />
         ) : submitted ? (
           <View style={styles.doneSection}>
             <Text style={doneStyles.check}>{'\u2713'}</Text>
@@ -239,7 +230,7 @@ export default function CountScreen({ navigation }) {
 
             {mode === 'turbo' ? (
               <>
-                <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled || !!unknownEan} suppressRefocus={qtyFocused} />
+                <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled} suppressRefocus={qtyFocused} />
                 {turboStatus !== '' && (
                   <View style={styles.turboCard}>
                     <Text style={styles.turboText}>{turboStatus}</Text>
@@ -247,7 +238,7 @@ export default function CountScreen({ navigation }) {
                 )}
               </>
             ) : (
-              <ScanInput placeholder="SCAN UNEXPECTED ITEM" onScan={enqueueStandard} disabled={scanDisabled || !!unknownEan} suppressRefocus={qtyFocused} />
+              <ScanInput placeholder="SCAN UNEXPECTED ITEM" onScan={enqueueStandard} disabled={scanDisabled} suppressRefocus={qtyFocused} />
             )}
 
             {lines.map((line, index) => {
@@ -298,7 +289,7 @@ export default function CountScreen({ navigation }) {
       {/* Bottom bar */}
       {countId && !submitted && (
         <View style={screenStyles.bottomBar}>
-          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || !!unknownEan || processingScan || processingStandard}>
+          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting || processingScan || processingStandard}>
             <Text style={buttonStyles.buttonPrimaryText}>{submitting ? 'SUBMITTING...' : 'SUBMIT COUNT'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={() => navigation.goBack()}>

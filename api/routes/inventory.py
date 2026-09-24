@@ -2,6 +2,7 @@
 Inventory management endpoints: cycle count creation, retrieval, and submission.
 """
 
+import hashlib
 import json
 import re
 import uuid
@@ -28,18 +29,32 @@ from utils.validation import validate_body
 inventory_bp = Blueprint("inventory", __name__)
 
 
-def _valid_gtin(value):
-    """Validate EAN-8, UPC-A, EAN-13 and GTIN-14 without provider calls."""
+def _valid_scanned_product_code(value):
+    """Accept the barcode printed on the physical product, without TecDoc.
+
+    Warehouse intake must not reject supplier/private-label barcodes merely
+    because they are not an EAN-8/UPC-A/EAN-13/GTIN-14 with a valid checksum.
+    TecDoc identity is deliberately decided later by an admin.  Keep the
+    accepted alphabet narrow and bounded because this value becomes a lookup
+    key and provisional SKU.
+    """
     barcode = str(value or "").strip()
-    if len(barcode) not in (8, 12, 13, 14) or not barcode.isdigit():
-        return False
-    digits = [int(char) for char in barcode]
-    check_digit = digits.pop()
-    total = sum(
-        digit * (3 if index % 2 == 0 else 1)
-        for index, digit in enumerate(reversed(digits))
-    )
-    return (10 - (total % 10)) % 10 == check_digit
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/+*-]{5,49}", barcode))
+
+
+def _mobile_stock_entry_schema_ready(db):
+    return bool(db.execute(text("""
+        SELECT to_regclass('public.item_catalog_discoveries') IS NOT NULL
+           AND to_regclass('public.mobile_stock_entries') IS NOT NULL
+    """)).scalar())
+
+
+def _provisional_sku(barcode):
+    candidate = f"SCAN-{barcode}"
+    if len(candidate) <= 50:
+        return candidate
+    digest = hashlib.sha256(barcode.encode("utf-8")).hexdigest()[:10]
+    return f"SCAN-{barcode[:34]}-{digest}"
 
 
 def _stock_entry_payload(db, row, *, repeated=False):
@@ -183,7 +198,7 @@ def register_stock_entry_bin():
 @require_auth
 @with_db
 def stock_entry():
-    """Add a scanned EAN to a scanned bin and queue unknown items for review.
+    """Add a scanned product code to a bin and queue unknown items for review.
 
     This deliberately does not call TecDoc.  The warehouse write remains fast
     and deterministic; an admin compares provisional items later from the web
@@ -198,9 +213,11 @@ def stock_entry():
     except (TypeError, ValueError, AttributeError):
         return jsonify({"error": "Depozitul, locația, cantitatea și cheia cererii sunt obligatorii."}), 422
 
-    ean = str(body.get("ean") or "").strip()
-    if not _valid_gtin(ean):
-        return jsonify({"error": "Scanează un EAN/GTIN valid (8, 12, 13 sau 14 cifre)."}), 422
+    barcode = str(body.get("barcode") or body.get("ean") or "").strip()
+    if not _valid_scanned_product_code(barcode):
+        return jsonify({
+            "error": "Scanează un cod de bare de 6–50 caractere (cifre, litere, punct, cratimă, / sau +)."
+        }), 422
     if quantity < 1 or quantity > 100000:
         return jsonify({"error": "Cantitatea trebuie să fie între 1 și 100000."}), 422
 
@@ -210,6 +227,11 @@ def stock_entry():
     allowed, denied = check_warehouse_access(warehouse_id)
     if not allowed:
         return denied
+    if not _mobile_stock_entry_schema_ready(g.db):
+        return jsonify({
+            "error": "Fluxul Locații și stoc nu este încă activat în baza de date. Aplică migrarea 083 și redeployează API-ul.",
+            "code": "mobile_stock_entry_schema_missing",
+        }), 503
 
     # Serialize retries before checking the idempotency table.  Both locks are
     # transaction-scoped and disappear automatically on commit/rollback.
@@ -236,46 +258,47 @@ def stock_entry():
     if not bin_row:
         return jsonify({"error": "Locația nu există sau nu aparține depozitului selectat."}), 404
 
-    # A second handheld can scan the same brand-new EAN at the same time.
-    # Lock on the EAN before deciding whether the provisional item exists.
-    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:ean))"), {"ean": f"ean:{ean}"})
+    # A second handheld can scan the same brand-new code at the same time.
+    # Lock on the code before deciding whether the provisional item exists.
+    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:barcode))"), {"barcode": f"barcode:{barcode}"})
     item = g.db.execute(
         text("""
             SELECT item_id, sku, item_name, upc, external_id
             FROM items
-            WHERE upc = :ean
+            WHERE upc = :barcode
                OR barcode_aliases @> CAST(:aliases AS jsonb)
             ORDER BY item_id
             LIMIT 1
             FOR UPDATE
         """),
-        {"ean": ean, "aliases": json.dumps([ean])},
+        {"barcode": barcode, "aliases": json.dumps([barcode])},
     ).fetchone()
     provisional = False
     if not item:
         provisional = True
-        base_sku = f"EAN-{ean}"
+        base_sku = _provisional_sku(barcode)
         sku = base_sku
         suffix = 1
         while g.db.execute(text("SELECT 1 FROM items WHERE sku = :sku"), {"sku": sku}).fetchone():
             suffix += 1
-            sku = f"{base_sku}-{suffix}"
+            suffix_text = f"-{suffix}"
+            sku = f"{base_sku[:50 - len(suffix_text)]}{suffix_text}"
         item = g.db.execute(
             text("""
                 INSERT INTO items (
                     sku, item_name, description, upc, category,
                     default_bin_id, external_id
                 ) VALUES (
-                    :sku, :name, :description, :ean, :category,
+                    :sku, :name, :description, :barcode, :category,
                     :bin_id, :external_id
                 )
                 RETURNING item_id, sku, item_name, upc, external_id
             """),
             {
                 "sku": sku,
-                "name": f"Produs nou – {ean}",
+                "name": f"Produs nou – {barcode}",
                 "description": "Creat prin scanare în depozit; identificarea TecDoc este în așteptare.",
-                "ean": ean,
+                "barcode": barcode,
                 "category": "În așteptare TecDoc",
                 "bin_id": bin_id,
                 "external_id": str(uuid.uuid4()),
@@ -285,10 +308,10 @@ def stock_entry():
             text("""
                 INSERT INTO item_catalog_discoveries (
                     item_id, scanned_ean, status, created_by
-                ) VALUES (:iid, :ean, 'PENDING', :actor)
+                ) VALUES (:iid, :barcode, 'PENDING', :actor)
                 ON CONFLICT (item_id) DO NOTHING
             """),
-            {"iid": item.item_id, "ean": ean, "actor": str(user.get("username") or "unknown")},
+            {"iid": item.item_id, "barcode": barcode, "actor": str(user.get("username") or "unknown")},
         )
 
     new_quantity = add_inventory(g.db, item.item_id, bin_id, warehouse_id, quantity)
@@ -309,7 +332,7 @@ def stock_entry():
             "bid": bin_id,
             "wid": warehouse_id,
             "qty": quantity,
-            "detail": "Intrare stoc mobil prin scanare EAN și locație",
+            "detail": "Intrare stoc mobil prin scanare cod produs și locație",
             "actor": actor,
             "external_id": adjustment_external_id,
         },
@@ -339,7 +362,7 @@ def stock_entry():
         warehouse_id=warehouse_id,
         details={
             "operation": "mobile_stock_entry",
-            "ean": ean,
+            "barcode": barcode,
             "bin_id": bin_id,
             "bin_code": bin_row.bin_code,
             "quantity": quantity,

@@ -9,6 +9,7 @@ import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import { buttonStyles, colors, fonts, radii, screenStyles } from '../theme/styles';
+import { normalizeScannedProductCode, validScannedProductCode } from '../utils/inventoryDiscovery';
 
 function requestId() {
   const seed = `${Date.now()}-${Math.random()}-${Math.random()}`;
@@ -20,10 +21,6 @@ function requestId() {
   const time = Date.now().toString(16).padStart(12, '0').slice(-12);
   const random = () => Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
   return `${random()}${random()}-${random()}-4${random().slice(1)}-a${random().slice(1)}-${time.slice(0, 4)}${tail}`;
-}
-
-function normalizeEan(value) {
-  return String(value || '').replace(/[^0-9]/g, '');
 }
 
 export default function StockEntryScreen({ navigation }) {
@@ -80,9 +77,9 @@ export default function StockEntryScreen({ navigation }) {
   }
 
   async function scanProduct(barcode) {
-    const nextEan = normalizeEan(barcode);
-    if (!nextEan) {
-      showError('Scanează codul EAN numeric al produsului.');
+    const nextEan = normalizeScannedProductCode(barcode);
+    if (!validScannedProductCode(nextEan)) {
+      showError('Scanează un cod de produs de 6–50 de caractere. Sunt acceptate cifre, litere, punct, cratimă, / și +.');
       return;
     }
     setEan(nextEan);
@@ -93,7 +90,7 @@ export default function StockEntryScreen({ navigation }) {
       setItemPreview(response.data?.item || null);
     } catch (lookupError) {
       if (lookupError.response?.status === 404) {
-        setItemPreview({ sku: `EAN-${nextEan}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
+        setItemPreview({ sku: `SCAN-${nextEan}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
         return;
       }
       setEan('');
@@ -121,7 +118,7 @@ export default function StockEntryScreen({ navigation }) {
       const response = await client.post('/api/inventory/stock-entry', {
         warehouse_id: warehouseId,
         bin_id: bin.bin_id,
-        ean,
+        barcode: ean,
         quantity: quantityNumber,
         // Keep the same key after a timeout/error so tapping again cannot add
         // the physical pieces twice when the first request actually committed.
@@ -183,11 +180,11 @@ export default function StockEntryScreen({ navigation }) {
 
         <View style={[styles.stepHeader, !bin && styles.inactive]}>
           <View style={[styles.stepNumber, ean && styles.stepDone]}><Text style={styles.stepNumberText}>{ean ? '✓' : '2'}</Text></View>
-          <View style={styles.stepCopy}><Text style={styles.stepTitle}>Scanează produsul</Text><Text style={styles.stepHint}>EAN cunoscut sau produs nou pentru echivalare ulterioară.</Text></View>
+          <View style={styles.stepCopy}><Text style={styles.stepTitle}>Scanează produsul</Text><Text style={styles.stepHint}>Cod cunoscut sau produs nou pentru echivalare ulterioară.</Text></View>
         </View>
 
         {bin && !ean ? (
-          <ScanInput placeholder="SCANEAZĂ EAN PRODUS" onScan={scanProduct} disabled={scanDisabled || saving} />
+          <ScanInput placeholder="SCANEAZĂ CODUL PRODUSULUI" onScan={scanProduct} disabled={scanDisabled || saving} />
         ) : null}
 
         {ean ? (
@@ -196,7 +193,7 @@ export default function StockEntryScreen({ navigation }) {
               <View style={styles.productCopy}>
                 <Text style={styles.productSku}>{itemPreview?.sku || ean}</Text>
                 <Text style={styles.productName}>{itemPreview?.item_name || 'Produs'}</Text>
-                <Text style={styles.productEan}>EAN {ean}</Text>
+                <Text style={styles.productEan}>COD SCANAT {ean}</Text>
               </View>
               {itemPreview?.provisional ? <Text style={styles.pendingBadge}>TECDOC ÎN AȘTEPTARE</Text> : <Text style={styles.knownBadge}>IDENTIFICAT</Text>}
             </View>
