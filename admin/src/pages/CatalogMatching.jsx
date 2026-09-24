@@ -43,6 +43,8 @@ export default function CatalogMatching() {
   const [matchError, setMatchError] = useState('');
 
   useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkResult(null);
     const controller = new AbortController();
     const timer = setTimeout(() => loadQueue(controller.signal), search ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -125,6 +127,11 @@ export default function CatalogMatching() {
         throw new Error(payload?.error || 'Echivalarea nu a putut fi salvată.');
       }
       setSelected(null);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(Number(selected.discovery_id));
+        return next;
+      });
       loadQueue();
     } catch (saveError) {
       setMatchError(saveError.message || 'Echivalarea nu a putut fi salvată.');
@@ -144,6 +151,11 @@ export default function CatalogMatching() {
         throw new Error(payload?.error || 'Produsul nu a putut fi ignorat.');
       }
       setSelected(null);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(Number(selected.discovery_id));
+        return next;
+      });
       loadQueue();
     } catch (saveError) {
       setMatchError(saveError.message || 'Produsul nu a putut fi ignorat.');

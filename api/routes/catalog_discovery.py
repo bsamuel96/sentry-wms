@@ -13,6 +13,7 @@ from middleware.auth_middleware import (
 )
 from middleware.db import with_db
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
+from services.catalog_media import catalog_image_urls
 from services.audit_service import write_audit_log
 
 catalog_discovery_bp = Blueprint("catalog_discovery", __name__)
@@ -21,7 +22,16 @@ _EAN_PATTERN = re.compile(r"^(?:\d{8}|\d{12}|\d{13}|\d{14})$")
 
 
 def _is_searchable_ean(value):
-    return bool(_EAN_PATTERN.fullmatch(str(value or "").strip()))
+    code = str(value or "").strip()
+    if not _EAN_PATTERN.fullmatch(code):
+        return False
+    digits = [int(value) for value in code]
+    check_digit = digits.pop()
+    total = sum(
+        digit * (3 if index % 2 == 0 else 1)
+        for index, digit in enumerate(reversed(digits))
+    )
+    return (10 - total % 10) % 10 == check_digit
 
 
 def _unique_exact_ean_matches(payload):
@@ -75,6 +85,7 @@ def _apply_match(discovery, match, actor):
 
 
 def _serialize_discovery(row):
+    images = catalog_image_urls(row.tecdoc_payload)
     return {
         "discovery_id": row.discovery_id,
         "item_id": row.item_id,
@@ -91,6 +102,8 @@ def _serialize_discovery(row):
         "tecdoc_brand": row.tecdoc_brand,
         "tecdoc_name": row.tecdoc_name,
         "tecdoc_match_type": row.tecdoc_match_type,
+        "image_url": images[0] if images else None,
+        "images": images,
         "quantity_on_hand": int(row.quantity_on_hand or 0),
         "locations": row.locations or [],
     }
@@ -126,7 +139,7 @@ def queue():
         SELECT d.discovery_id, d.item_id, d.scanned_ean, d.status,
                d.created_by, d.created_at, d.reviewed_by, d.reviewed_at,
                d.tecdoc_article_id, d.tecdoc_code, d.tecdoc_brand,
-               d.tecdoc_name, d.tecdoc_match_type,
+               d.tecdoc_name, d.tecdoc_match_type, d.tecdoc_payload,
                i.sku, i.item_name,
                COALESCE(SUM(inv.quantity_on_hand), 0) AS quantity_on_hand,
                COALESCE(

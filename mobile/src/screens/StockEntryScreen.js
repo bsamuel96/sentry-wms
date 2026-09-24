@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useScrollToTop } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
@@ -137,6 +137,7 @@ export default function StockEntryScreen({ navigation }) {
         quantity: result.quantity_added,
         total: result.quantity_in_bin,
         pending: result.catalog_status === 'PENDING',
+        imageUrl: result.item?.image_url || row.imageUrl || null,
         syncing: false,
         failed: false,
       } : row)));
@@ -164,6 +165,7 @@ export default function StockEntryScreen({ navigation }) {
       quantity: quantityNumber,
       total: null,
       pending: Boolean(itemPreview.provisional),
+      imageUrl: itemPreview.image_url || itemPreview.images?.[0] || null,
       syncing: true,
       failed: false,
     };
@@ -223,6 +225,14 @@ export default function StockEntryScreen({ navigation }) {
         {ean ? (
           <View style={styles.productCard}>
             <View style={styles.productTop}>
+              {itemPreview?.image_url || itemPreview?.images?.[0] ? (
+                <Image
+                  source={{ uri: itemPreview.image_url || itemPreview.images[0] }}
+                  style={styles.productImage}
+                  resizeMode="contain"
+                  accessibilityLabel={`Imagine ${itemPreview?.item_name || itemPreview?.sku || ean}`}
+                />
+              ) : null}
               <View style={styles.productCopy}>
                 <Text style={styles.productSku}>{itemPreview?.sku || ean}</Text>
                 <Text style={styles.productName}>{itemPreview?.item_name || 'Produs'}</Text>
@@ -262,6 +272,9 @@ export default function StockEntryScreen({ navigation }) {
             <Text style={styles.sessionTitle}>ADĂUGATE ÎN SESIUNEA CURENTĂ</Text>
             {lastEntries.map((entry) => (
               <View key={entry.id} style={styles.sessionRow}>
+                {entry.imageUrl ? (
+                  <Image source={{ uri: entry.imageUrl }} style={styles.sessionImage} resizeMode="contain" />
+                ) : null}
                 <View style={styles.sessionCopy}>
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
                   <Text style={styles.sessionName}>{entry.name}</Text>
@@ -305,8 +318,9 @@ const styles = StyleSheet.create({
   newBinTitle: { color: colors.warning, fontFamily: fonts.mono, fontSize: 13, fontWeight: '800' },
   newBinHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 5, marginBottom: 12 },
   productCard: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card, backgroundColor: colors.cardBg, padding: 14, marginBottom: 16 },
-  productTop: { gap: 10, marginBottom: 18 },
-  productCopy: { minWidth: 0 },
+  productTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
+  productCopy: { flex: 1, minWidth: 0 },
+  productImage: { width: 92, height: 92, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.button, backgroundColor: '#fff' },
   productSku: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 16, fontWeight: '800' },
   productName: { color: colors.textPrimary, fontSize: 14, fontWeight: '700', marginTop: 4 },
   productEan: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11, marginTop: 3 },
@@ -321,6 +335,7 @@ const styles = StyleSheet.create({
   sessionSection: { marginTop: 4 },
   sessionTitle: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginBottom: 8 },
   sessionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card, backgroundColor: '#fff' },
+  sessionImage: { width: 52, height: 52, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.button, backgroundColor: '#fff' },
   sessionCopy: { flex: 1, minWidth: 0 },
   sessionSku: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },

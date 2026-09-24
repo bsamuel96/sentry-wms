@@ -91,6 +91,8 @@ def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monke
         'matches': [{
             'id': '123', 'code': 'C113', 'brand': 'DOLZ', 'name': 'Pompă apă',
             'matchType': 'ean', 'eans': ['4006381333931'],
+            'imageUrl': 'https://cdn.example.test/c113.jpg',
+            'images': ['https://cdn.example.test/c113.jpg'],
         }],
     })
     listed = client.get('/api/catalog-discovery/queue?status=PENDING&per_page=25', headers=auth_headers)
@@ -109,6 +111,9 @@ def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monke
     assert saved.status_code == 200, saved.get_data(as_text=True)
     assert query('SELECT status,tecdoc_code FROM item_catalog_discoveries WHERE item_id=%s', (item_id,)) == [('MATCHED', 'C113')]
     assert query('SELECT mpn,category FROM items WHERE item_id=%s', (item_id,)) == [('C113', 'TecDoc')]
+    mobile_lookup = client.get('/api/lookup/item/4006381333931', headers=auth_headers)
+    assert mobile_lookup.status_code == 200
+    assert mobile_lookup.get_json()['item']['image_url'] == 'https://cdn.example.test/c113.jpg'
 
 
 def test_reference_match_requires_explicit_confirmation(client, auth_headers, monkeypatch):
@@ -166,6 +171,26 @@ def test_bulk_match_saves_only_one_unique_exact_ean(client, auth_headers, monkey
     assert query("SELECT status,tecdoc_code FROM item_catalog_discoveries WHERE item_id=%s", (exact_item_id,)) == [("MATCHED", "C113")]
     assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (ambiguous_item_id,)) == [("PENDING",)]
     assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (invalid_item_id,)) == [("PENDING",)]
+
+
+def test_bulk_match_skips_checksum_invalid_numeric_code_without_calling_catalog(client, auth_headers, monkeypatch):
+    discovery_id, item_id = create_discovery("12345678")
+    monkeypatch.setattr(routes, "catalog_request", lambda *_args, **_kwargs: pytest.fail("invalid GTIN reached TecDoc"))
+
+    response = client.post(
+        "/api/catalog-discovery/queue/bulk-match",
+        headers=auth_headers,
+        json={"discovery_ids": [discovery_id]},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["summary"]["skipped"] == 1
+    assert response.get_json()["results"] == [{
+        "discovery_id": discovery_id,
+        "status": "skipped",
+        "reason": "invalid_ean",
+    }]
+    assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (item_id,)) == [("PENDING",)]
 
 
 def test_delete_unused_scanned_product_removes_stock_and_keeps_audit(client, auth_headers):

@@ -22,4 +22,10 @@ describe('instant stock-entry feedback', () => {
     expect(source).toMatch(/onPress=\{\(\) => syncEntry\(entry\)\}/);
     expect(source).toMatch(/Salvare eșuată · REÎNCEARCĂ/);
   });
+
+  it('shows TecDoc product images in the active card and session history', () => {
+    expect(source).toMatch(/itemPreview\.image_url \|\| itemPreview\.images\[0\]/);
+    expect(source).toMatch(/accessibilityLabel=\{`Imagine/);
+    expect(source).toMatch(/entry\.imageUrl/);
+  });
 });

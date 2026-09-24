@@ -23,6 +23,7 @@ from services.inventory_service import (
     release_satisfiable_backorders,
     RELEASE_SOURCE_ADJUSTMENT,
 )
+from services.catalog_media import catalog_image_urls
 from services.webhook_dispatcher.backorder_notifier import dispatch_backorder_notification
 from utils.validation import validate_body
 
@@ -71,9 +72,10 @@ def _stock_entry_payload(db, row, *, repeated=False):
         {"iid": row.item_id},
     ).fetchone()
     discovery = db.execute(
-        text("SELECT status FROM item_catalog_discoveries WHERE item_id = :iid"),
+        text("SELECT status, tecdoc_payload FROM item_catalog_discoveries WHERE item_id = :iid"),
         {"iid": row.item_id},
     ).fetchone()
+    image_urls = catalog_image_urls(discovery.tecdoc_payload if discovery else None)
     return {
         "stock_entry_id": row.stock_entry_id,
         "idempotent_replay": repeated,
@@ -82,6 +84,8 @@ def _stock_entry_payload(db, row, *, repeated=False):
             "sku": item.sku,
             "item_name": item.item_name,
             "upc": item.upc,
+            "image_url": image_urls[0] if image_urls else None,
+            "images": image_urls,
         },
         "bin_id": row.bin_id,
         "warehouse_id": row.warehouse_id,

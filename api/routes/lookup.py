@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from middleware.auth_middleware import require_auth, warehouse_scope_clause
 from middleware.db import with_db
+from services.catalog_media import catalog_image_urls
 
 lookup_bp = Blueprint("lookup", __name__)
 
@@ -51,12 +52,14 @@ def lookup_item(barcode):
     item_row = g.db.execute(
         text(
             """
-            SELECT item_id, sku, item_name, upc, category, weight_lbs,
-                   description, barcode_aliases
-            FROM items
-            WHERE upc = :barcode
-               OR sku = :barcode
-               OR barcode_aliases @> CAST(:barcode_json AS jsonb)
+            SELECT i.item_id, i.sku, i.item_name, i.upc, i.category,
+                   i.weight_lbs, i.description, i.barcode_aliases,
+                   d.status AS catalog_status, d.tecdoc_payload
+            FROM items i
+            LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
+            WHERE i.upc = :barcode
+               OR i.sku = :barcode
+               OR i.barcode_aliases @> CAST(:barcode_json AS jsonb)
             LIMIT 1
             """
         ),
@@ -66,6 +69,7 @@ def lookup_item(barcode):
     if not item_row:
         return jsonify({"error": "Item not found"}), 404
 
+    image_urls = catalog_image_urls(item_row.tecdoc_payload)
     item = {
         "item_id": item_row.item_id,
         "sku": item_row.sku,
@@ -73,6 +77,9 @@ def lookup_item(barcode):
         "upc": item_row.upc,
         "category": item_row.category,
         "weight_lbs": float(item_row.weight_lbs) if item_row.weight_lbs else None,
+        "catalog_status": item_row.catalog_status or "KNOWN",
+        "image_url": image_urls[0] if image_urls else None,
+        "images": image_urls,
     }
 
     location_rows = g.db.execute(
