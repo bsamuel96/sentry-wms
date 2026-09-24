@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
+import { canSearchScannedCodeInTecDoc } from '../utils/catalogMatching.js';
 
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'În așteptare' },
@@ -22,10 +23,6 @@ function statusTag(status) {
   return <span className={`tag ${className}`}>{statusLabel(status)}</span>;
 }
 
-export function canSearchScannedCodeInTecDoc(value) {
-  return /^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(String(value || '').trim());
-}
-
 export default function CatalogMatching() {
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -39,6 +36,9 @@ export default function CatalogMatching() {
   const [loading, setLoading] = useState(false);
   const [matchLoading, setMatchLoading] = useState(false);
   const [savingId, setSavingId] = useState('');
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
   const [error, setError] = useState('');
   const [matchError, setMatchError] = useState('');
 
@@ -152,7 +152,93 @@ export default function CatalogMatching() {
     }
   }
 
+  function toggleRow(discoveryId) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const key = Number(discoveryId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function selectVisiblePending() {
+    const eligible = rows.filter((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const allSelected = eligible.length > 0 && eligible.every((row) => next.has(Number(row.discovery_id)));
+      eligible.forEach((row) => {
+        if (allSelected) next.delete(Number(row.discovery_id));
+        else next.add(Number(row.discovery_id));
+      });
+      return next;
+    });
+  }
+
+  async function bulkMatchSelected() {
+    const ids = [...selectedIds];
+    if (!ids.length || bulkLoading) return;
+    if (!window.confirm(`Echivalezi automat ${ids.length} produse? Vor fi salvate numai potrivirile EAN exacte și unice.`)) return;
+    setBulkLoading(true);
+    setBulkResult(null);
+    setError('');
+    try {
+      const response = await api.post('/catalog-discovery/queue/bulk-match', { discovery_ids: ids });
+      if (!response?.ok) {
+        const payload = await response?.json();
+        throw new Error(payload?.error || 'Echivalarea multiplă nu a putut fi executată.');
+      }
+      const payload = await response.json();
+      setBulkResult(payload.summary || null);
+      setSelectedIds(new Set());
+      await loadQueue();
+    } catch (bulkError) {
+      setError(bulkError.message || 'Echivalarea multiplă nu a putut fi executată.');
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  async function deleteDiscovery(row = selected) {
+    if (!row || savingId) return;
+    const locations = (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ');
+    const detail = locations ? `\n\nSe elimină ${row.quantity_on_hand} buc. din ${locations}.` : '';
+    if (!window.confirm(`Ștergi definitiv produsul scanat ${row.ean}?${detail}\n\nOperația este permisă numai dacă produsul nu a fost folosit într-o comandă sau operație de depozit.`)) return;
+    setSavingId(`delete:${row.discovery_id}`);
+    setMatchError('');
+    setError('');
+    try {
+      const response = await api.delete(`/catalog-discovery/queue/${row.discovery_id}`);
+      if (!response?.ok) {
+        const payload = await response?.json();
+        throw new Error(payload?.error || 'Produsul scanat nu a putut fi șters.');
+      }
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(Number(row.discovery_id));
+        return next;
+      });
+      if (selected?.discovery_id === row.discovery_id) setSelected(null);
+      await loadQueue();
+    } catch (deleteError) {
+      if (selected?.discovery_id === row.discovery_id) setMatchError(deleteError.message || 'Produsul scanat nu a putut fi șters.');
+      else setError(deleteError.message || 'Produsul scanat nu a putut fi șters.');
+    } finally {
+      setSavingId('');
+    }
+  }
+
   const columns = useMemo(() => [
+    { key: 'select', label: 'Selectează', render: (row) => (
+      <input
+        type="checkbox"
+        checked={selectedIds.has(Number(row.discovery_id))}
+        disabled={row.status !== 'PENDING' || !canSearchScannedCodeInTecDoc(row.ean) || bulkLoading}
+        aria-label={`Selectează ${row.ean} pentru echivalare automată`}
+        onClick={(event) => event.stopPropagation()}
+        onChange={() => toggleRow(row.discovery_id)}
+      />
+    ) },
     { key: 'ean', label: 'Cod scanat', mono: true },
     { key: 'item_name', label: 'Produs curent' },
     { key: 'quantity_on_hand', label: 'Cantitate' },
@@ -160,11 +246,16 @@ export default function CatalogMatching() {
     { key: 'status', label: 'Stare', render: (row) => statusTag(row.status) },
     { key: 'created_by', label: 'Scanat de', render: (row) => row.created_by || '—' },
     { key: 'actions', label: 'Acțiuni', render: (row) => (
-      <button type="button" className="btn btn-primary btn-sm" onClick={(event) => { event.stopPropagation(); openReview(row); }}>
-        {row.status === 'PENDING' ? 'Compară TecDoc' : 'Detalii'}
-      </button>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-primary btn-sm" onClick={(event) => { event.stopPropagation(); openReview(row); }}>
+          {row.status === 'PENDING' ? 'Compară TecDoc' : 'Detalii'}
+        </button>
+        <button type="button" className="btn btn-danger btn-sm" disabled={Boolean(savingId)} onClick={(event) => { event.stopPropagation(); deleteDiscovery(row); }}>
+          {savingId === `delete:${row.discovery_id}` ? 'Se șterge…' : 'Șterge'}
+        </button>
+      </div>
     ) },
-  ], []); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [bulkLoading, savingId, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -177,8 +268,19 @@ export default function CatalogMatching() {
           {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <input className="form-input" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
+        <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) || bulkLoading}>
+          Selectează pagina
+        </button>
+        <button type="button" className="btn btn-primary" onClick={bulkMatchSelected} disabled={!selectedIds.size || bulkLoading}>
+          {bulkLoading ? 'Se echivalează…' : `Echivalează automat după EAN (${selectedIds.size})`}
+        </button>
       </div>
       {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
+      {bulkResult ? (
+        <div className={`alert ${bulkResult.failed ? 'alert-error' : 'alert-success'}`} role="status">
+          {bulkResult.matched} echivalate · {bulkResult.not_found} fără potrivire · {bulkResult.ambiguous} ambigue · {bulkResult.skipped} omise{bulkResult.failed ? ` · ${bulkResult.failed} erori` : ''}.
+        </div>
+      ) : null}
       {loading && !rows.length ? <p>Se încarcă…</p> : null}
       <DataTable rowKey="discovery_id" columns={columns} data={rows} pagination={pagination} onPageChange={setPage} onRowClick={openReview} clickColumn="ean" emptyMessage="Nu există produse pentru verificare" />
 
@@ -189,10 +291,18 @@ export default function CatalogMatching() {
           size="wide"
           footer={selected.status === 'PENDING' ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 8 }}>
-              <button type="button" className="btn btn-danger" onClick={ignoreSelected} disabled={Boolean(savingId)}>Ignoră</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn btn-danger" onClick={ignoreSelected} disabled={Boolean(savingId)}>Ignoră</button>
+                <button type="button" className="btn btn-danger" onClick={() => deleteDiscovery(selected)} disabled={Boolean(savingId)}>{savingId === `delete:${selected.discovery_id}` ? 'Se șterge…' : 'Șterge produsul scanat'}</button>
+              </div>
               <button type="button" className="btn" onClick={() => setSelected(null)}>Închide</button>
             </div>
-          ) : <button type="button" className="btn" onClick={() => setSelected(null)}>Închide</button>}
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 8 }}>
+              <button type="button" className="btn btn-danger" onClick={() => deleteDiscovery(selected)} disabled={Boolean(savingId)}>{savingId === `delete:${selected.discovery_id}` ? 'Se șterge…' : 'Șterge produsul scanat'}</button>
+              <button type="button" className="btn" onClick={() => setSelected(null)}>Închide</button>
+            </div>
+          )}
         >
           <div className="detail-grid" style={{ marginBottom: 18 }}>
             <span className="detail-label">Cod scanat</span><span className="mono">{selected.ean}</span>

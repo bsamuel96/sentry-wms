@@ -74,7 +74,7 @@ def test_proxy_keeps_keys_server_side_and_upstream_401_does_not_log_out_user(mon
 def create_discovery(ean="4006381333931"):
     item_id = query(
         "INSERT INTO items(sku,item_name,upc,category,external_id) VALUES(%s,%s,%s,'În așteptare TecDoc',%s) RETURNING item_id",
-        (f"EAN-{ean}-{uuid.uuid4().hex[:4]}", f"Produs nou – {ean}", ean, str(uuid.uuid4())),
+        (f"SCAN-{ean}-{uuid.uuid4().hex[:4]}", f"Produs nou – {ean}", ean, str(uuid.uuid4())),
     )[0][0]
     discovery_id = query(
         "INSERT INTO item_catalog_discoveries(item_id,scanned_ean,created_by) VALUES(%s,%s,'admin') RETURNING discovery_id",
@@ -128,3 +128,85 @@ def test_reference_match_requires_explicit_confirmation(client, auth_headers, mo
         json={'articleId': '55', 'code': 'OE-55', 'reference': 'OE-55', 'confirmEquivalent': True},
     )
     assert accepted.status_code == 200
+
+
+def test_bulk_match_saves_only_one_unique_exact_ean(client, auth_headers, monkeypatch):
+    exact_id, exact_item_id = create_discovery("4006381333931")
+    ambiguous_id, ambiguous_item_id = create_discovery("5901234123457")
+    invalid_id, invalid_item_id = create_discovery("PRIVATE-CODE")
+
+    def lookup(_path, **kwargs):
+        ean = kwargs["params"]["ean"]
+        if ean == "4006381333931":
+            return {"matches": [
+                {"id": "123", "code": "C113", "brand": "DOLZ", "name": "Pompă apă", "matchType": "ean"},
+                # Provider duplicates of the same article must not make the result ambiguous.
+                {"id": "123", "code": "C113", "brand": "DOLZ", "name": "Pompă apă", "matchType": "ean"},
+            ]}
+        return {"matches": [
+            {"id": "201", "code": "A1", "brand": "A", "name": "Produs A", "matchType": "ean"},
+            {"id": "202", "code": "B1", "brand": "B", "name": "Produs B", "matchType": "ean"},
+        ]}
+
+    monkeypatch.setattr(routes, "catalog_request", lookup)
+    response = client.post(
+        "/api/catalog-discovery/queue/bulk-match",
+        headers=auth_headers,
+        json={"discovery_ids": [exact_id, ambiguous_id, invalid_id]},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["summary"] == {
+        "requested": 3,
+        "matched": 1,
+        "ambiguous": 1,
+        "not_found": 0,
+        "skipped": 1,
+        "failed": 0,
+    }
+    assert query("SELECT status,tecdoc_code FROM item_catalog_discoveries WHERE item_id=%s", (exact_item_id,)) == [("MATCHED", "C113")]
+    assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (ambiguous_item_id,)) == [("PENDING",)]
+    assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (invalid_item_id,)) == [("PENDING",)]
+
+
+def test_delete_unused_scanned_product_removes_stock_and_keeps_audit(client, auth_headers):
+    discovery_id, item_id = create_discovery("5941234567890")
+    query(
+        "INSERT INTO inventory(item_id,bin_id,warehouse_id,quantity_on_hand,quantity_allocated) VALUES(%s,3,1,4,0)",
+        (item_id,),
+    )
+    query(
+        "INSERT INTO inventory_adjustments(item_id,bin_id,warehouse_id,quantity_change,reason_code,reason_detail,status,adjusted_by,external_id) VALUES(%s,3,1,4,'FOUND','scan','APPROVED','admin',%s)",
+        (item_id, str(uuid.uuid4())),
+    )
+    query(
+        "INSERT INTO mobile_stock_entries(idempotency_key,item_id,bin_id,warehouse_id,quantity,entered_by) VALUES(%s,%s,3,1,4,'admin')",
+        (str(uuid.uuid4()), item_id),
+    )
+
+    response = client.delete(f"/api/catalog-discovery/queue/{discovery_id}", headers=auth_headers)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["quantity_removed"] == 4
+    assert query("SELECT 1 FROM items WHERE item_id=%s", (item_id,)) == []
+    assert query("SELECT 1 FROM inventory WHERE item_id=%s", (item_id,)) == []
+    assert query("SELECT 1 FROM mobile_stock_entries WHERE item_id=%s", (item_id,)) == []
+    assert query(
+        "SELECT action_type FROM audit_log WHERE entity_type='ITEM' AND entity_id=%s ORDER BY log_id DESC LIMIT 1",
+        (item_id,),
+    ) == [("PROVISIONAL_ITEM_DELETE",)]
+
+
+def test_delete_scanned_product_is_blocked_once_used_in_order(client, auth_headers):
+    discovery_id, item_id = create_discovery("8712345678906")
+    so_id = query(
+        "INSERT INTO sales_orders(so_number,warehouse_id,created_by,external_id) VALUES(%s,1,'admin',%s) RETURNING so_id",
+        (f"TEST-{uuid.uuid4().hex[:8]}", str(uuid.uuid4())),
+    )[0][0]
+    query(
+        "INSERT INTO sales_order_lines(so_id,item_id,quantity_ordered,line_number) VALUES(%s,%s,1,1)",
+        (so_id, item_id),
+    )
+
+    response = client.delete(f"/api/catalog-discovery/queue/{discovery_id}", headers=auth_headers)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "provisional_item_in_use"
+    assert query("SELECT 1 FROM items WHERE item_id=%s", (item_id,)) == [(1,)]

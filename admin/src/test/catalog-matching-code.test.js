@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSearchScannedCodeInTecDoc } from '../pages/CatalogMatching.jsx';
+import { canSearchScannedCodeInTecDoc } from '../utils/catalogMatching.js';
 
 describe('TecDoc catalog matching scanned codes', () => {
   it('auto-searches only standard EAN/GTIN lengths', () => {

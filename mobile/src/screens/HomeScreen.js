@@ -495,7 +495,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.44.0 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v1.45.0 Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}
