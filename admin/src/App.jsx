@@ -45,6 +45,7 @@ import TransferOrders from './pages/TransferOrders.jsx';
 import POSActivity from './pages/POSActivity.jsx';
 import Fraud from './pages/Fraud.jsx';
 import CatalogMatching from './pages/CatalogMatching.jsx';
+import StockEntry from './pages/StockEntry.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -100,6 +101,7 @@ export default function App() {
         <Route path="/cycle-counts" element={<ErrorBoundary fallbackMessage="Could not load cycle counts."><CycleCounts /></ErrorBoundary>} />
         <Route path="/count-approvals" element={<ErrorBoundary fallbackMessage="Could not load count approvals."><CycleCountApproval /></ErrorBoundary>} />
         <Route path="/receiving" element={<ErrorBoundary fallbackMessage="Could not load receiving."><Receiving /></ErrorBoundary>} />
+        <Route path="/stock-entry" element={<ErrorBoundary fallbackMessage="Introducerea prin scanare nu a putut fi încărcată."><StockEntry /></ErrorBoundary>} />
         <Route path="/purchase-orders" element={<ErrorBoundary fallbackMessage="Could not load purchase orders."><PurchaseOrders /></ErrorBoundary>} />
         <Route path="/putaway" element={<ErrorBoundary fallbackMessage="Could not load put-away."><PutAway /></ErrorBoundary>} />
         <Route path="/sales-orders" element={<ErrorBoundary fallbackMessage="Could not load sales orders."><SalesOrders /></ErrorBoundary>} />

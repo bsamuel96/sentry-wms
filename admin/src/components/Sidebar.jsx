@@ -23,6 +23,7 @@ const NAV = [
   {
     label: 'Inbound',
     items: [
+      { to: '/stock-entry', label: 'Scan Stock Entry', pageKey: 'receiving' },
       { to: '/purchase-orders', label: 'Purchase Orders', pageKey: 'purchase-orders' },
       { to: '/receiving', label: 'Receiving', pageKey: 'receiving' },
       { to: '/putaway', label: 'Put-away', pageKey: 'putaway' },

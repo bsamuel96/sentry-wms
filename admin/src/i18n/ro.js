@@ -7,6 +7,7 @@ const TEXT = {
   Inbound: 'Intrări',
   'Purchase Orders': 'Comenzi de aprovizionare',
   Receiving: 'Recepție marfă',
+  'Scan Stock Entry': 'Introducere prin scanare',
   'Put-away': 'Depozitare',
   Outbound: 'Ieșiri',
   'Sales Orders': 'Comenzi de vânzare',
