@@ -28,8 +28,24 @@ describe('phone camera scanner', () => {
   it('captures one photo on demand and processes that stable frame', () => {
     expect(componentSource).toMatch(/takePictureAsync/);
     expect(componentSource).toMatch(/scanFromURLAsync\(photo\.uri, BARCODE_TYPES\)/);
+    expect(componentSource).toMatch(/withOperationTimeout/);
+    expect(componentSource).toMatch(/CAPTURE_TIMEOUT_MS/);
+    expect(componentSource).toMatch(/DECODE_TIMEOUT_MS/);
     expect(componentSource).toMatch(/accessibilityLabel="Fotografiază și procesează codul"/);
-    expect(componentSource).not.toMatch(/onBarcodeScanned=\{/);
+  });
+
+  it('arms the native Android detector only after the capture button is pressed', () => {
+    expect(componentSource).toMatch(/barcodeScannerSettings=\{\{ barcodeTypes: BARCODE_TYPES \}\}/);
+    expect(componentSource).toMatch(
+      /onBarcodeScanned=\{processing && !scanLocked \? handleBarcodeScanned : undefined\}/,
+    );
+  });
+
+  it('waits for the camera preview and unlocks stalled processing for a retry', () => {
+    expect(componentSource).toMatch(/onCameraReady=\{handleCameraReady\}/);
+    expect(componentSource).toMatch(/disabled=\{processing \|\| scanLocked \|\| !cameraReady\}/);
+    expect(componentSource).toMatch(/Camera a fost deblocată; fotografiază din nou/);
+    expect(componentSource).toMatch(/processingRef\.current = false/);
   });
 
   it('declares the native dependency and camera permission', () => {

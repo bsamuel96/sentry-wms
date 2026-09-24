@@ -11,6 +11,10 @@ import {
 import Text from './LocalizedText';
 import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import { colors, fonts, radii } from '../theme/styles';
+import { OPERATION_TIMEOUT_CODE, withOperationTimeout } from '../utils/operationTimeout';
+
+const CAPTURE_TIMEOUT_MS = 12_000;
+const DECODE_TIMEOUT_MS = 10_000;
 
 const BARCODE_TYPES = [
   'code128',
@@ -33,17 +37,34 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [scanError, setScanError] = useState('');
   const cameraRef = useRef(null);
   const scanLockedRef = useRef(false);
+  const processingRef = useRef(false);
+  const operationIdRef = useRef(0);
+  const mountedRef = useRef(true);
+  const visibleRef = useRef(visible);
   const permissionRequestedRef = useRef(false);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      operationIdRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    visibleRef.current = visible;
     if (!visible) {
+      operationIdRef.current += 1;
       permissionRequestedRef.current = false;
       scanLockedRef.current = false;
+      processingRef.current = false;
       setScanLocked(false);
       setProcessing(false);
+      setCameraReady(false);
       setScanError('');
       setTorchEnabled(false);
       return;
@@ -71,27 +92,71 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
   }, [requestPermission]);
 
   const captureAndProcess = useCallback(async () => {
-    if (!cameraRef.current || processing || scanLockedRef.current) return;
+    if (!cameraRef.current || processingRef.current || scanLockedRef.current) return;
+    if (!cameraReady) {
+      setScanError('Camera încă se pregătește. Așteaptă o clipă și încearcă din nou.');
+      return;
+    }
+
+    const operationId = operationIdRef.current + 1;
+    operationIdRef.current = operationId;
+    processingRef.current = true;
     setProcessing(true);
     setScanError('');
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
-        shutterSound: false,
-      });
-      const results = await scanFromURLAsync(photo.uri, BARCODE_TYPES);
+      const photo = await withOperationTimeout(
+        cameraRef.current.takePictureAsync({
+          quality: 0.7,
+          shutterSound: false,
+        }),
+        CAPTURE_TIMEOUT_MS,
+        'Fotografierea',
+      );
+      if (!mountedRef.current || !visibleRef.current || operationIdRef.current !== operationId) return;
+
+      const results = await withOperationTimeout(
+        scanFromURLAsync(photo.uri, BARCODE_TYPES),
+        DECODE_TIMEOUT_MS,
+        'Procesarea fotografiei',
+      );
+      if (!mountedRef.current || !visibleRef.current || operationIdRef.current !== operationId) return;
+
       const value = String(results?.[0]?.data || '').trim();
       if (!value) {
         setScanError('Nu am găsit un cod în fotografie. Apropie eticheta, evită reflexiile și încearcă din nou.');
         return;
       }
       handleBarcodeScanned({ data: value });
-    } catch {
-      setScanError('Fotografia nu a putut fi procesată. Ține telefonul nemișcat și încearcă din nou.');
+    } catch (error) {
+      if (!mountedRef.current || !visibleRef.current || operationIdRef.current !== operationId) return;
+      setScanError(error?.code === OPERATION_TIMEOUT_CODE
+        ? 'Procesarea a durat prea mult. Camera a fost deblocată; fotografiază din nou.'
+        : 'Fotografia nu a putut fi procesată. Ține telefonul nemișcat și încearcă din nou.');
     } finally {
-      if (!scanLockedRef.current) setProcessing(false);
+      if (
+        mountedRef.current
+        && visibleRef.current
+        && operationIdRef.current === operationId
+        && !scanLockedRef.current
+      ) {
+        processingRef.current = false;
+        setProcessing(false);
+      }
     }
-  }, [handleBarcodeScanned, processing]);
+  }, [cameraReady, handleBarcodeScanned]);
+
+  const handleCameraReady = useCallback(() => {
+    if (!visibleRef.current) return;
+    setCameraReady(true);
+    setScanError('');
+  }, []);
+
+  const handleCameraMountError = useCallback(() => {
+    processingRef.current = false;
+    setProcessing(false);
+    setCameraReady(false);
+    setScanError('Camera nu a putut porni. Închide scannerul și încearcă din nou.');
+  }, []);
 
   return (
     <Modal
@@ -128,6 +193,10 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
               style={StyleSheet.absoluteFill}
               facing="back"
               enableTorch={torchEnabled}
+              barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES }}
+              onBarcodeScanned={processing && !scanLocked ? handleBarcodeScanned : undefined}
+              onCameraReady={handleCameraReady}
+              onMountError={handleCameraMountError}
             />
             <View pointerEvents="none" style={styles.guideOverlay}>
               <View style={styles.scanGuide} />
@@ -136,15 +205,24 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
             <View style={styles.cameraActions}>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
               <TouchableOpacity
-                style={[styles.captureButton, processing && styles.captureButtonDisabled]}
+                style={[
+                  styles.captureButton,
+                  (processing || !cameraReady) && styles.captureButtonDisabled,
+                ]}
                 onPress={captureAndProcess}
-                disabled={processing || scanLocked}
+                disabled={processing || scanLocked || !cameraReady}
                 accessibilityRole="button"
                 accessibilityLabel="Fotografiază și procesează codul"
               >
                 {processing ? <ActivityIndicator color="#ffffff" /> : <View style={styles.captureButtonInner} />}
               </TouchableOpacity>
-              <Text style={styles.captureLabel}>{processing ? 'SE PROCESEAZĂ…' : 'FOTOGRAFIAZĂ ȘI PROCESEAZĂ'}</Text>
+              <Text style={styles.captureLabel}>
+                {processing
+                  ? 'SE PROCESEAZĂ…'
+                  : cameraReady
+                    ? 'FOTOGRAFIAZĂ ȘI PROCESEAZĂ'
+                    : 'SE PREGĂTEȘTE CAMERA…'}
+              </Text>
               <TouchableOpacity
                 style={[styles.torchButton, torchEnabled && styles.torchButtonActive]}
                 onPress={() => setTorchEnabled((current) => !current)}
