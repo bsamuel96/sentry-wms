@@ -72,7 +72,11 @@ def _stock_entry_payload(db, row, *, repeated=False):
         {"iid": row.item_id},
     ).fetchone()
     discovery = db.execute(
-        text("SELECT status, tecdoc_payload FROM item_catalog_discoveries WHERE item_id = :iid"),
+        text("""
+            SELECT status, tecdoc_article_id, tecdoc_code, tecdoc_brand,
+                   tecdoc_name, tecdoc_match_type, tecdoc_payload
+            FROM item_catalog_discoveries WHERE item_id = :iid
+        """),
         {"iid": row.item_id},
     ).fetchone()
     image_urls = catalog_image_urls(discovery.tecdoc_payload if discovery else None)
@@ -84,6 +88,12 @@ def _stock_entry_payload(db, row, *, repeated=False):
             "sku": item.sku,
             "item_name": item.item_name,
             "upc": item.upc,
+            "catalog_status": discovery.status if discovery else "KNOWN",
+            "tecdoc_article_id": discovery.tecdoc_article_id if discovery else None,
+            "tecdoc_code": discovery.tecdoc_code if discovery else None,
+            "tecdoc_brand": discovery.tecdoc_brand if discovery else None,
+            "tecdoc_name": discovery.tecdoc_name if discovery else None,
+            "tecdoc_match_type": discovery.tecdoc_match_type if discovery else None,
             "image_url": image_urls[0] if image_urls else None,
             "images": image_urls,
         },

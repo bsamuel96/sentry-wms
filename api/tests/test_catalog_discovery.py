@@ -98,6 +98,9 @@ def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monke
     listed = client.get('/api/catalog-discovery/queue?status=PENDING&per_page=25', headers=auth_headers)
     assert listed.status_code == 200
     assert listed.get_json()['discoveries'][0]['discovery_id'] == discovery_id
+    pending_products = client.get('/api/admin/items?q=4006381333931', headers=auth_headers)
+    assert pending_products.status_code == 200
+    assert pending_products.get_json()['items'] == []
 
     matches = client.get(f'/api/catalog-discovery/queue/{discovery_id}/matches', headers=auth_headers)
     assert matches.status_code == 200
@@ -113,7 +116,22 @@ def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monke
     assert query('SELECT mpn,category FROM items WHERE item_id=%s', (item_id,)) == [('C113', 'TecDoc')]
     mobile_lookup = client.get('/api/lookup/item/4006381333931', headers=auth_headers)
     assert mobile_lookup.status_code == 200
-    assert mobile_lookup.get_json()['item']['image_url'] == 'https://cdn.example.test/c113.jpg'
+    mobile_item = mobile_lookup.get_json()['item']
+    assert mobile_item['image_url'] == 'https://cdn.example.test/c113.jpg'
+    assert mobile_item['catalog_status'] == 'MATCHED'
+    assert mobile_item['tecdoc_code'] == 'C113'
+    assert mobile_item['tecdoc_brand'] == 'DOLZ'
+    assert mobile_item['tecdoc_name'] == 'Pompă apă'
+    products = client.get('/api/admin/items?q=4006381333931', headers=auth_headers)
+    assert products.status_code == 200
+    product = products.get_json()['items'][0]
+    assert product['tecdoc_code'] == 'C113'
+    assert product['tecdoc_brand'] == 'DOLZ'
+    assert product['tecdoc_name'] == 'Pompă apă'
+    assert product['image_url'] == 'https://cdn.example.test/c113.jpg'
+    detail = client.get(f'/api/admin/items/{item_id}', headers=auth_headers)
+    assert detail.status_code == 200
+    assert detail.get_json()['item']['image_url'] == 'https://cdn.example.test/c113.jpg'
 
 
 def test_reference_match_requires_explicit_confirmation(client, auth_headers, monkeypatch):
@@ -171,6 +189,31 @@ def test_bulk_match_saves_only_one_unique_exact_ean(client, auth_headers, monkey
     assert query("SELECT status,tecdoc_code FROM item_catalog_discoveries WHERE item_id=%s", (exact_item_id,)) == [("MATCHED", "C113")]
     assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (ambiguous_item_id,)) == [("PENDING",)]
     assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (invalid_item_id,)) == [("PENDING",)]
+
+
+def test_bulk_match_accepts_one_unique_ean_reference_fallback(client, auth_headers, monkeypatch):
+    discovery_id, item_id = create_discovery("3276426982559")
+    monkeypatch.setattr(routes, "catalog_request", lambda *_args, **_kwargs: {
+        "searchedBy": "ean_then_reference",
+        "matches": [{
+            "id": "777", "code": "698255", "brand": "VALEO",
+            "name": "Produs identificat", "matchType": "reference",
+            "imageUrl": "https://cdn.example.test/698255.jpg",
+        }],
+    })
+
+    response = client.post(
+        "/api/catalog-discovery/queue/bulk-match",
+        headers=auth_headers,
+        json={"discovery_ids": [discovery_id]},
+    )
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["summary"]["matched"] == 1
+    assert query(
+        "SELECT status,tecdoc_code,tecdoc_match_type FROM item_catalog_discoveries WHERE item_id=%s",
+        (item_id,),
+    ) == [("MATCHED", "698255", "reference")]
 
 
 def test_bulk_match_skips_checksum_invalid_numeric_code_without_calling_catalog(client, auth_headers, monkeypatch):

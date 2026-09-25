@@ -24,6 +24,7 @@ from schemas.csv_import import (
 from schemas.items import CreateItemRequest, CreatePreferredBinRequest, UpdateItemRequest, UpdatePreferredBinRequest
 from services.audit_service import write_audit_log
 from services.events_service import emit_event, get_user_external_id
+from services.catalog_media import catalog_image_urls
 from services.inventory_service import (
     add_inventory,
     set_inventory_quantity,
@@ -50,7 +51,16 @@ def list_items():
 
     search = request.args.get("q", "")
 
-    where_clauses = []
+    # A scan is an internal inventory placeholder until its TecDoc identity is
+    # resolved. Keep it in inventory, but expose it only in Catalog Discovery;
+    # the Products catalogue receives normal items and MATCHED scans only.
+    where_clauses = ["""
+        NOT EXISTS (
+            SELECT 1 FROM item_catalog_discoveries hidden_discovery
+            WHERE hidden_discovery.item_id = i.item_id
+              AND hidden_discovery.status <> 'MATCHED'
+        )
+    """]
     params = {}
     if category:
         where_clauses.append("i.category = :cat")
@@ -83,8 +93,13 @@ def list_items():
         text(f"""
             SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.weight_lbs,
                    i.default_bin_id, i.is_active, i.created_at,
-                   b.bin_code AS default_bin_code
+                   b.bin_code AS default_bin_code,
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload
             FROM items i
+            LEFT JOIN item_catalog_discoveries d
+              ON d.item_id = i.item_id AND d.status = 'MATCHED'
             -- An item can carry more than one priority-1 preferred_bins
             -- row (the data allows it), and a plain join fans the item
             -- out into duplicate result rows. Collapse to one
@@ -107,17 +122,34 @@ def list_items():
     ).fetchall()
 
     return jsonify({
-        "items": [
-            {"item_id": r.item_id, "sku": r.sku, "item_name": r.item_name, "upc": r.upc,
-             "mpn": r.mpn,
-             "category": r.category, "weight_lbs": float(r.weight_lbs) if r.weight_lbs else None,
-             "default_bin_id": r.default_bin_id, "default_bin_code": r.default_bin_code,
-             "is_active": r.is_active,
-             "created_at": r.created_at.isoformat() if r.created_at else None}
-            for r in rows
-        ],
+        "items": [_serialize_admin_item(r) for r in rows],
         "total": total, "page": page, "per_page": per_page, "pages": pages,
     })
+
+
+def _serialize_admin_item(row):
+    images = catalog_image_urls(row.tecdoc_payload)
+    return {
+        "item_id": row.item_id,
+        "sku": row.sku,
+        "item_name": row.item_name,
+        "upc": row.upc,
+        "mpn": row.mpn,
+        "category": row.category,
+        "weight_lbs": float(row.weight_lbs) if row.weight_lbs else None,
+        "default_bin_id": row.default_bin_id,
+        "default_bin_code": row.default_bin_code,
+        "is_active": row.is_active,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "catalog_status": row.catalog_status,
+        "tecdoc_article_id": row.tecdoc_article_id,
+        "tecdoc_code": row.tecdoc_code,
+        "tecdoc_brand": row.tecdoc_brand,
+        "tecdoc_name": row.tecdoc_name,
+        "tecdoc_match_type": row.tecdoc_match_type,
+        "image_url": images[0] if images else None,
+        "images": images,
+    }
 
 
 @admin_bp.route("/items/<int:item_id>", methods=["GET"])
@@ -126,7 +158,20 @@ def list_items():
 @with_db
 def get_item(item_id):
     item = g.db.execute(
-        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("""
+            SELECT i.item_id, i.sku, i.item_name, i.description, i.upc,
+                   i.mpn, i.barcode_aliases, i.category, i.weight_lbs,
+                   i.length_in, i.width_in, i.height_in, i.default_bin_id,
+                   i.reorder_point, i.reorder_qty, i.is_lot_tracked,
+                   i.is_serial_tracked, i.is_active, i.created_at, i.updated_at,
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload
+            FROM items i
+            LEFT JOIN item_catalog_discoveries d
+              ON d.item_id = i.item_id AND d.status = 'MATCHED'
+            WHERE i.item_id = :iid
+        """),
         {"iid": item_id},
     ).fetchone()
     if not item:
@@ -151,6 +196,7 @@ def get_item(item_id):
         {"iid": item_id},
     ).fetchall()
 
+    images = catalog_image_urls(item.tecdoc_payload)
     return jsonify({
         "item": {
             "item_id": item.item_id, "sku": item.sku, "item_name": item.item_name,
@@ -164,6 +210,14 @@ def get_item(item_id):
             "is_serial_tracked": item.is_serial_tracked, "is_active": item.is_active,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            "catalog_status": item.catalog_status,
+            "tecdoc_article_id": item.tecdoc_article_id,
+            "tecdoc_code": item.tecdoc_code,
+            "tecdoc_brand": item.tecdoc_brand,
+            "tecdoc_name": item.tecdoc_name,
+            "tecdoc_match_type": item.tecdoc_match_type,
+            "image_url": images[0] if images else None,
+            "images": images,
         },
         # inventory_id is the row identity the admin grid keys on.
         # bin_id alone is not unique here: inventory is UNIQUE(item_id,

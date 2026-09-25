@@ -4,7 +4,7 @@ import math
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import text
 from middleware.auth_middleware import (
     require_auth,
@@ -34,10 +34,24 @@ def _is_searchable_ean(value):
     return (10 - total % 10) % 10 == check_digit
 
 
-def _unique_exact_ean_matches(payload):
+def _unique_auto_ean_matches(payload):
+    """Return candidates that are safe to auto-apply for an EAN-led lookup.
+
+    TecDoc sometimes fails its dedicated EAN search and then finds the same
+    barcode through the article/reference index.  The AutoSav lookup marks
+    that successful fallback as ``searchedBy=ean_then_reference`` and the
+    candidate as ``matchType=reference``.  It is still an EAN-led search: no
+    operator reference was supplied.  Accept one unique, complete candidate;
+    multiple candidates remain ambiguous and require a human choice.
+    """
+    if not isinstance(payload, dict):
+        return []
+    searched_by = payload.get("searchedBy")
     unique = {}
-    for candidate in payload.get("matches", []) if isinstance(payload, dict) else []:
-        if candidate.get("matchType") != "ean":
+    for candidate in payload.get("matches", []):
+        # Older bridge builds omitted ``searchedBy`` but still identified
+        # exact EAN candidates explicitly. Preserve that compatible path.
+        if searched_by not in ("ean", "ean_then_reference") and candidate.get("matchType") != "ean":
             continue
         key = (str(candidate.get("id") or ""), str(candidate.get("code") or ""))
         if all(key):
@@ -223,7 +237,8 @@ def queue_match(discovery_id):
                   and str(candidate.get("code") or "") == code), None)
     if not match:
         return jsonify({"error": "Rezultatul TecDoc nu mai este disponibil. Repetă căutarea."}), 409
-    if match.get("matchType") != "ean" and body.get("confirmEquivalent") is not True:
+    ean_led_lookup = not reference and lookup.get("searchedBy") in ("ean", "ean_then_reference")
+    if match.get("matchType") != "ean" and not ean_led_lookup and body.get("confirmEquivalent") is not True:
         return jsonify({"error": "Confirmă manual că produsul fizic corespunde acestei referințe."}), 422
 
     actor = str(g.current_user.get("username") or "unknown")
@@ -237,10 +252,13 @@ def queue_match(discovery_id):
 @require_admin_or_page_permission("items")
 @with_db
 def queue_bulk_match():
-    """Match selected provisional items only when TecDoc returns one exact EAN.
+    """Match provisional items when an EAN-led lookup has one unique result.
 
-    Reference/equivalent matches remain a manual decision. A failed upstream
-    lookup does not roll back successful rows from the same operator batch.
+    AutoSav/TecDoc may resolve an EAN through its reference fallback and mark
+    the candidate ``reference``.  That is still automatic when the operator
+    supplied no separate reference. Manual reference searches and ambiguous
+    results remain a human decision. A failed upstream lookup does not roll
+    back successful rows from the same operator batch.
     """
     body = request.get_json(silent=True) or {}
     raw_ids = body.get("discovery_ids")
@@ -254,6 +272,8 @@ def queue_bulk_match():
         return jsonify({"error": "Selecția conține identificatori invalizi."}), 422
     if any(value < 1 for value in discovery_ids):
         return jsonify({"error": "Selecția conține identificatori invalizi."}), 422
+
+    current_app.logger.info("catalog bulk match started requested=%d", len(discovery_ids))
 
     discoveries = []
     for discovery_id in discovery_ids:
@@ -270,10 +290,10 @@ def queue_bulk_match():
     lookup_candidates = []
     for discovery in discoveries:
         if discovery.status != "PENDING":
-            results.append({"discovery_id": discovery.discovery_id, "status": "skipped", "reason": "already_reviewed"})
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "already_reviewed"})
             continue
         if not _is_searchable_ean(discovery.scanned_ean):
-            results.append({"discovery_id": discovery.discovery_id, "status": "skipped", "reason": "invalid_ean"})
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "invalid_ean"})
             continue
         lookup_candidates.append(discovery)
 
@@ -296,19 +316,20 @@ def queue_bulk_match():
                 except CatalogDiscoveryError as exc:
                     results.append({
                         "discovery_id": discovery.discovery_id,
+                        "ean": discovery.scanned_ean,
                         "status": "error",
                         "reason": "lookup_failed",
                         "error": str(exc),
                     })
                     continue
-                exact = _unique_exact_ean_matches(lookup)
-                if not exact:
-                    results.append({"discovery_id": discovery.discovery_id, "status": "not_found", "reason": "no_exact_ean"})
+                candidates = _unique_auto_ean_matches(lookup)
+                if not candidates:
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "not_found", "reason": "no_exact_ean"})
                     continue
-                if len(exact) > 1:
-                    results.append({"discovery_id": discovery.discovery_id, "status": "ambiguous", "reason": "multiple_exact_ean"})
+                if len(candidates) > 1:
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "ambiguous", "reason": "multiple_exact_ean"})
                     continue
-                resolved.append((discovery, exact[0]))
+                resolved.append((discovery, candidates[0]))
 
     actor = str(g.current_user.get("username") or "unknown")
     for discovery, match in resolved:
@@ -319,11 +340,12 @@ def queue_bulk_match():
             FOR UPDATE
         """), {"id": discovery.discovery_id}).fetchone()
         if not locked or locked.status != "PENDING":
-            results.append({"discovery_id": discovery.discovery_id, "status": "skipped", "reason": "already_reviewed"})
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "already_reviewed"})
             continue
         _apply_match(locked, match, actor)
         results.append({
             "discovery_id": discovery.discovery_id,
+            "ean": discovery.scanned_ean,
             "item_id": discovery.item_id,
             "status": "matched",
             "tecdoc_code": str(match.get("code") or ""),
@@ -340,6 +362,11 @@ def queue_bulk_match():
         "skipped": sum(result["status"] == "skipped" for result in results),
         "failed": sum(result["status"] == "error" for result in results),
     }
+    current_app.logger.info(
+        "catalog bulk match completed requested=%d matched=%d ambiguous=%d not_found=%d skipped=%d failed=%d",
+        summary["requested"], summary["matched"], summary["ambiguous"],
+        summary["not_found"], summary["skipped"], summary["failed"],
+    )
     return jsonify({"ok": True, "summary": summary, "results": results})
 
 

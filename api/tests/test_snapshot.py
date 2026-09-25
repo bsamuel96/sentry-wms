@@ -188,6 +188,29 @@ class TestKeeperUnavailable:
         assert resp.get_json()["error"] == "snapshot_keeper_unavailable"
 
 
+class TestLiveProjection:
+    def test_live_projection_does_not_require_snapshot_keeper(self, client, scoped_token):
+        resp = _get(
+            client,
+            scoped_token["plaintext"],
+            warehouse_id=1,
+            live=1,
+            limit=2000,
+        )
+        assert resp.status_code == 200
+        payload = resp.get_json()
+        assert payload["consistency"] == "live"
+        assert isinstance(payload["rows"], list)
+        assert payload["next_cursor"] is None
+        if payload["rows"]:
+            row = payload["rows"][0]
+            assert "item_external_id" in row
+            assert "item_name" in row
+            assert "sku" in row
+            assert "upc" in row
+            assert "bin_code" in row
+
+
 class TestConcurrentScanCap:
     """v1.5.1 V-203 (#144): one in-flight scan per token. Pre-v1.5.1
     a single token could hold every keeper pool slot by starting

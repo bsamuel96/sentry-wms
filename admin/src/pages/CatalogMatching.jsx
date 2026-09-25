@@ -44,12 +44,15 @@ export default function CatalogMatching() {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    setSelectedIds(new Set());
-    setBulkResult(null);
     const controller = new AbortController();
     const timer = setTimeout(() => loadQueue(controller.signal), search ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [page, status, search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function resetBulkSelection() {
+    setSelectedIds(new Set());
+    setBulkResult(null);
+  }
 
   async function loadQueue(signal) {
     setLoading(true);
@@ -92,7 +95,16 @@ export default function CatalogMatching() {
         throw new Error(payload?.error || 'TecDoc nu a răspuns.');
       }
       const payload = await response.json();
-      setMatches(payload.matches || []);
+      const nextMatches = payload.matches || [];
+      const eanLedLookup = !nextReference.trim() && ['ean', 'ean_then_reference'].includes(payload.searchedBy);
+      const uniqueAutoMatches = [...new Map(nextMatches
+        .filter((match) => eanLedLookup && match.id && match.code)
+        .map((match) => [`${match.id}:${match.code}`, match])).values()];
+      if (uniqueAutoMatches.length === 1) {
+        await chooseMatch(uniqueAutoMatches[0], row, '', true);
+        return;
+      }
+      setMatches(nextMatches);
       setSearchedBy(payload.searchedBy || '');
     } catch (lookupError) {
       setMatchError(lookupError.message || 'TecDoc nu a răspuns.');
@@ -110,19 +122,19 @@ export default function CatalogMatching() {
     if (row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) findMatches(row, '');
   }
 
-  async function chooseMatch(match) {
-    if (!selected || savingId) return;
-    const discoveryId = Number(selected.discovery_id);
-    const scannedCode = selected.ean;
-    const equivalent = match.matchType !== 'ean';
-    if (equivalent && !window.confirm(`Confirmi că produsul fizic cu codul ${selected.ean} este ${match.brand} ${match.code}?`)) return;
+  async function chooseMatch(match, target = selected, matchReference = reference, eanLedLookup = false) {
+    if (!target || savingId) return;
+    const discoveryId = Number(target.discovery_id);
+    const scannedCode = target.ean;
+    const equivalent = match.matchType !== 'ean' && !eanLedLookup;
+    if (equivalent && !window.confirm(`Confirmi că produsul fizic cu codul ${target.ean} este ${match.brand} ${match.code}?`)) return;
     setSavingId(String(match.id));
     setMatchError('');
     try {
-      const response = await api.post(`/catalog-discovery/queue/${selected.discovery_id}/match`, {
+      const response = await api.post(`/catalog-discovery/queue/${target.discovery_id}/match`, {
         articleId: match.id,
         code: match.code,
-        reference: reference.trim(),
+        reference: matchReference.trim(),
         confirmEquivalent: equivalent,
       });
       if (!response?.ok) {
@@ -137,7 +149,7 @@ export default function CatalogMatching() {
       if (status === 'PENDING') {
         setPagination((current) => current ? { ...current, total: Math.max(0, current.total - 1) } : current);
       }
-      setSuccess(`${scannedCode} a fost echivalat cu ${[match.brand, match.code].filter(Boolean).join(' ')}.`);
+      setSuccess(`${scannedCode} a fost identificat și salvat direct ca produs TecDoc ${[match.brand, match.code].filter(Boolean).join(' ')}.`);
       setSelected(null);
       setSelectedIds((current) => {
         const next = new Set(current);
@@ -202,7 +214,6 @@ export default function CatalogMatching() {
   async function bulkMatchSelected() {
     const ids = [...selectedIds];
     if (!ids.length || bulkLoading) return;
-    if (!window.confirm(`Echivalezi automat ${ids.length} produse? Vor fi salvate numai potrivirile EAN exacte și unice.`)) return;
     setBulkLoading(true);
     setBulkResult(null);
     setError('');
@@ -213,7 +224,7 @@ export default function CatalogMatching() {
         throw new Error(payload?.error || 'Echivalarea multiplă nu a putut fi executată.');
       }
       const payload = await response.json();
-      setBulkResult(payload.summary || null);
+      setBulkResult(payload.summary ? { ...payload.summary, results: payload.results || [] } : null);
       setSelectedIds(new Set());
       await loadQueue();
     } catch (bulkError) {
@@ -285,13 +296,13 @@ export default function CatalogMatching() {
     <div>
       <PageHeader title="Echivalare TecDoc" />
       <p style={{ margin: '-8px 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Produsele necunoscute introduse din APK rămân în stoc cu codul scanat până când le confirmi identitatea TecDoc aici.
+        Un singur rezultat găsit pornind de la EAN devine automat produs TecDoc. Numai căutările manuale după cod producător/OE și rezultatele multiple cer confirmare.
       </p>
       <div className="filter-bar">
-        <select className="form-select" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} style={{ width: 180 }}>
+        <select className="form-select" value={status} onChange={(event) => { resetBulkSelection(); setStatus(event.target.value); setPage(1); }} style={{ width: 180 }}>
           {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <input className="form-input" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
+        <input className="form-input" value={search} onChange={(event) => { resetBulkSelection(); setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
         <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) || bulkLoading}>
           Selectează pagina
         </button>
@@ -302,19 +313,25 @@ export default function CatalogMatching() {
       {success ? (
         <div className="alert alert-success" role="status">
           {success}{' '}
-          <button type="button" className="btn btn-sm" onClick={() => { setStatus('MATCHED'); setPage(1); setSuccess(''); }}>
+          <button type="button" className="btn btn-sm" onClick={() => { resetBulkSelection(); setStatus('MATCHED'); setPage(1); setSuccess(''); }}>
             Vezi echivalatele
           </button>
         </div>
       ) : null}
       {error ? <div className="alert alert-error" role="alert">{error}</div> : null}
       {bulkResult ? (
-        <div className={`alert ${bulkResult.failed ? 'alert-error' : 'alert-success'}`} role="status">
-          {bulkResult.matched} echivalate · {bulkResult.not_found} fără potrivire · {bulkResult.ambiguous} ambigue · {bulkResult.skipped} omise{bulkResult.failed ? ` · ${bulkResult.failed} erori` : ''}.
+        <div className={`alert ${bulkResult.failed || bulkResult.not_found ? 'alert-error' : 'alert-success'}`} role="status">
+          {bulkResult.not_found ? <strong style={{ display: 'block', marginBottom: 5 }}>INEXISTENTE ÎN TECDOC: {bulkResult.not_found}</strong> : null}
+          {bulkResult.matched} echivalate · {bulkResult.ambiguous} necesită alegere · {bulkResult.skipped} omise{bulkResult.failed ? ` · ${bulkResult.failed} erori` : ''}.
+          {bulkResult.not_found ? (
+            <span style={{ display: 'block', marginTop: 6 }}>
+              Nu este un mismatch: TecDoc nu a returnat nicio potrivire EAN exactă pentru {bulkResult.results.filter((result) => result.status === 'not_found').map((result) => result.ean).filter(Boolean).join(', ') || 'codurile marcate'}.
+            </span>
+          ) : null}
         </div>
       ) : null}
       {loading && !rows.length ? <p>Se încarcă…</p> : null}
-      <DataTable rowKey="discovery_id" columns={columns} data={rows} pagination={pagination} onPageChange={setPage} onRowClick={openReview} clickColumn="ean" emptyMessage="Nu există produse pentru verificare" />
+      <DataTable rowKey="discovery_id" columns={columns} data={rows} pagination={pagination} onPageChange={(nextPage) => { resetBulkSelection(); setPage(nextPage); }} onRowClick={openReview} clickColumn="ean" emptyMessage="Nu există produse pentru verificare" />
 
       {selected ? (
         <Modal
@@ -356,7 +373,11 @@ export default function CatalogMatching() {
               </div>
               {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Sentry. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
               {matchError ? <div className="alert alert-error" role="alert">{matchError}</div> : null}
-              {!matchLoading && !matchError && matches.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Nicio potrivire. Introdu un cod producător sau OE și caută din nou.</p> : null}
+              {!matchLoading && !matchError && matches.length === 0 ? (
+                <div className="alert alert-error" role="status">
+                  <strong>INEXISTENT ÎN TECDOC</strong><br />TecDoc nu a returnat o potrivire. Nu este un mismatch; introdu un cod producător sau OE pentru o căutare alternativă.
+                </div>
+              ) : null}
               {searchedBy ? <p style={{ color: 'var(--text-secondary)', fontSize: 12 }}>Căutare: {searchedBy === 'ean' ? 'EAN exact' : 'referință produs'}</p> : null}
               <div style={{ display: 'grid', gap: 8 }}>
                 {matches.map((match) => (

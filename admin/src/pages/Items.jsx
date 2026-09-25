@@ -4,12 +4,35 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import './Items.css';
 
 const FILTER_OPTIONS = [
   { label: 'Active', value: 'active' },
   { label: 'Archived', value: 'archived' },
   { label: 'All', value: 'all' },
 ];
+
+function ProductImage({ item, large = false }) {
+  const imageUrl = item.image_url || item.images?.[0];
+  if (!imageUrl) {
+    return <span className={`items-product-image-placeholder${large ? ' is-large' : ''}`} aria-label="Produs fără imagine">TECDOC</span>;
+  }
+  return <img className={`items-product-image${large ? ' is-large' : ''}`} src={imageUrl} alt={`Imagine ${item.tecdoc_name || item.item_name || item.sku}`} loading="lazy" />;
+}
+
+function ProductIdentity({ item }) {
+  return (
+    <div className="items-product-identity">
+      <ProductImage item={item} />
+      <div className="items-product-copy">
+        {item.tecdoc_brand ? <span className="items-product-brand">{item.tecdoc_brand}</span> : null}
+        <strong>{item.tecdoc_name || item.item_name}</strong>
+        <span className="mono">{item.tecdoc_code || item.mpn || item.sku}</span>
+        {item.catalog_status === 'MATCHED' ? <span className="items-tecdoc-pill">TecDoc</span> : null}
+      </div>
+    </div>
+  );
+}
 
 export default function Items() {
   const [searchParams] = useSearchParams();
@@ -148,14 +171,11 @@ export default function Items() {
   }
 
   const columns = [
-    { key: 'sku', label: 'SKU', mono: true },
-    { key: 'item_name', label: 'Item Name' },
-    { key: 'upc', label: 'UPC', mono: true, render: (r) => r.upc || '-' },
-    { key: 'mpn', label: 'MPN', mono: true, render: (r) => r.mpn || '-' },
-    { key: 'default_bin_code', label: 'Default Bin', mono: true, render: (r) => r.default_bin_code || '\u2013' },
-    { key: 'category', label: 'Category', render: (r) => r.category || '-' },
-    { key: 'weight_lbs', label: 'Weight', render: (r) => r.weight_lbs ? `${r.weight_lbs} lb` : '-' },
-    { key: 'is_active', label: 'Active', render: (r) => r.is_active ? 'Yes' : 'No' },
+    { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} />, csvValue: (r) => r.tecdoc_name || r.item_name },
+    { key: 'upc', label: 'EAN', mono: true, render: (r) => r.upc || '-' },
+    { key: 'default_bin_code', label: 'Locație', mono: true, render: (r) => r.default_bin_code || '\u2013' },
+    { key: 'category', label: 'Categorie', render: (r) => r.category || '-' },
+    { key: 'is_active', label: 'Stare', render: (r) => r.is_active ? 'Activ' : 'Arhivat' },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
         <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
@@ -194,6 +214,16 @@ export default function Items() {
         <Modal title={detail.item_name || detail.sku} onClose={() => setDetail(null)}
           footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}
         >
+          {detail.catalog_status === 'MATCHED' || detail.tecdoc_code ? (
+            <div className="items-detail-product">
+              <ProductImage item={detail} large />
+              <div>
+                <span className="items-product-brand">{detail.tecdoc_brand || 'TECDOC'}</span>
+                <h3>{detail.tecdoc_name || detail.item_name}</h3>
+                <div className="mono">{detail.tecdoc_code || detail.mpn}</div>
+              </div>
+            </div>
+          ) : null}
           <div className="detail-grid">
             <span className="detail-label">SKU</span><span className="mono">{detail.sku}</span>
             <span className="detail-label">UPC</span><span className="mono">{detail.upc || '-'}</span>

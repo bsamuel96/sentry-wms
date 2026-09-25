@@ -23,9 +23,9 @@ function jsonResponse(payload, status = 200) {
 const discovery = {
   discovery_id: 41,
   item_id: 91,
-  ean: '5941234567890',
-  sku: 'SCAN-5941234567890',
-  item_name: 'Produs nou – 5941234567890',
+  ean: '4006381333931',
+  sku: 'SCAN-4006381333931',
+  item_name: 'Produs nou – 4006381333931',
   quantity_on_hand: 3,
   locations: [{ bin_code: 'A-a-1', quantity: 3 }],
   status: 'PENDING',
@@ -57,12 +57,31 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     }));
 
     render(<CatalogMatching />);
-    const checkbox = await screen.findByRole('checkbox', { name: 'Selectează 5941234567890 pentru echivalare automată' });
+    const checkbox = await screen.findByRole('checkbox', { name: 'Selectează 4006381333931 pentru echivalare automată' });
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole('button', { name: 'Echivalează automat după EAN (1)' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/bulk-match', { discovery_ids: [41] }));
-    expect(await screen.findByText(/1 echivalate · 0 fără potrivire/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 echivalate · 0 necesită alegere/)).toBeInTheDocument();
+  });
+
+  it('arată EAN-urile inexistente proeminent și nu le numește mismatch', async () => {
+    get.mockResolvedValueOnce(jsonResponse(page())).mockResolvedValueOnce(jsonResponse(page()));
+    post.mockResolvedValueOnce(jsonResponse({
+      ok: true,
+      summary: { requested: 1, matched: 0, not_found: 1, ambiguous: 0, skipped: 0, failed: 0 },
+      results: [{ discovery_id: 41, ean: discovery.ean, status: 'not_found', reason: 'no_exact_ean' }],
+    }));
+
+    render(<CatalogMatching />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selectează 4006381333931 pentru echivalare automată' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Echivalează automat după EAN (1)' }));
+
+    const alert = await screen.findByRole('status');
+    expect(alert).toHaveClass('alert-error');
+    expect(alert).toHaveTextContent('INEXISTENTE ÎN TECDOC: 1');
+    expect(alert).toHaveTextContent(discovery.ean);
+    expect(alert).toHaveTextContent('Nu este un mismatch');
   });
 
   it('șterge explicit produsul provizoriu din listă', async () => {
@@ -76,7 +95,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Se elimină 3 buc. din A-a-1: 3'));
   });
 
-  it('confirmă vizibil echivalarea manuală și scoate produsul din așteptare', async () => {
+  it('salvează direct potrivirea EAN exactă fără un al doilea click de confirmare', async () => {
     get
       .mockResolvedValueOnce(jsonResponse(page()))
       .mockResolvedValueOnce(jsonResponse({
@@ -88,14 +107,31 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
 
     render(<CatalogMatching />);
     fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
-    fireEvent.change(screen.getByPlaceholderText('Ex: C113'), { target: { value: 'C113' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Caută în TecDoc' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Alege' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('5941234567890 a fost echivalat cu DOLZ C113');
+    expect(await screen.findByText('4006381333931 a fost identificat și salvat direct ca produs TecDoc DOLZ C113.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vezi echivalatele' })).toBeInTheDocument();
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/match', {
-      articleId: '123', code: 'C113', reference: 'C113', confirmEquivalent: false,
+      articleId: '123', code: 'C113', reference: '', confirmEquivalent: false,
     }));
+    expect(window.confirm).not.toHaveBeenCalledWith(expect.stringContaining('Confirmi că produsul fizic'));
+  });
+
+  it('salvează direct rezultatul unic găsit prin fallback-ul EAN', async () => {
+    get
+      .mockResolvedValueOnce(jsonResponse(page()))
+      .mockResolvedValueOnce(jsonResponse({
+        searchedBy: 'ean_then_reference',
+        matches: [{ id: '777', code: '698255', brand: 'VALEO', name: 'Produs identificat', matchType: 'reference' }],
+      }))
+      .mockResolvedValueOnce(jsonResponse(page([])));
+    post.mockResolvedValueOnce(jsonResponse({ ok: true, item_id: 91, status: 'MATCHED' }));
+
+    render(<CatalogMatching />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/match', {
+      articleId: '777', code: '698255', reference: '', confirmEquivalent: false,
+    }));
+    expect(window.confirm).not.toHaveBeenCalledWith(expect.stringContaining('Confirmi că produsul fizic'));
   });
 });

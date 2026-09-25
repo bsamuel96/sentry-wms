@@ -28,4 +28,13 @@ describe('instant stock-entry feedback', () => {
     expect(source).toMatch(/accessibilityLabel=\{`Imagine/);
     expect(source).toMatch(/entry\.imageUrl/);
   });
+
+  it('renders a TecDoc row for matched EANs and an explicit no-match state otherwise', () => {
+    expect(source).toMatch(/itemPreview\?\.catalog_status === 'MATCHED'/);
+    expect(source).toMatch(/itemPreview\?\.tecdoc_brand/);
+    expect(source).toMatch(/itemPreview\?\.tecdoc_name/);
+    expect(source).toMatch(/itemPreview\?\.tecdoc_code/);
+    expect(source).toContain('ECHIVALAT TECDOC');
+    expect(source).toContain('FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU');
+  });
 });

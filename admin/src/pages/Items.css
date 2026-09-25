@@ -1,0 +1,87 @@
+.items-product-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 280px;
+}
+
+.items-product-image,
+.items-product-image-placeholder {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.items-product-image-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  background: #eff6ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.items-product-image.is-large,
+.items-product-image-placeholder.is-large {
+  width: 112px;
+  height: 112px;
+  flex-basis: 112px;
+}
+
+.items-product-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.items-product-brand {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.items-tecdoc-pill {
+  width: max-content;
+  padding: 2px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #0759bd;
+  background: #eff6ff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.items-detail-product {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.items-detail-product h3 {
+  margin: 4px 0 8px;
+}
+
+@media (max-width: 640px) {
+  .items-product-identity {
+    min-width: 230px;
+  }
+
+  .items-product-image,
+  .items-product-image-placeholder {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+}

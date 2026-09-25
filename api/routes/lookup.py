@@ -54,7 +54,9 @@ def lookup_item(barcode):
             """
             SELECT i.item_id, i.sku, i.item_name, i.upc, i.category,
                    i.weight_lbs, i.description, i.barcode_aliases,
-                   d.status AS catalog_status, d.tecdoc_payload
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload
             FROM items i
             LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             WHERE i.upc = :barcode
@@ -78,6 +80,11 @@ def lookup_item(barcode):
         "category": item_row.category,
         "weight_lbs": float(item_row.weight_lbs) if item_row.weight_lbs else None,
         "catalog_status": item_row.catalog_status or "KNOWN",
+        "tecdoc_article_id": item_row.tecdoc_article_id,
+        "tecdoc_code": item_row.tecdoc_code,
+        "tecdoc_brand": item_row.tecdoc_brand,
+        "tecdoc_name": item_row.tecdoc_name,
+        "tecdoc_match_type": item_row.tecdoc_match_type,
         "image_url": image_urls[0] if image_urls else None,
         "images": image_urls,
     }

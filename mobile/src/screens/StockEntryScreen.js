@@ -39,6 +39,7 @@ export default function StockEntryScreen({ navigation }) {
   const { error, scanDisabled, showError, clearError } = useScreenError();
 
   const quantityNumber = useMemo(() => Math.max(0, Number.parseInt(quantity, 10) || 0), [quantity]);
+  const hasTecDocMatch = itemPreview?.catalog_status === 'MATCHED' || Boolean(itemPreview?.tecdoc_code);
 
   async function scanBin(barcode) {
     try {
@@ -132,8 +133,9 @@ export default function StockEntryScreen({ navigation }) {
       setLastEntries((current) => current.map((row) => (row.id === entry.id ? {
         ...row,
         serverId: result.stock_entry_id,
-        sku: result.item?.sku || row.sku,
-        name: result.item?.item_name || row.name,
+        sku: result.item?.tecdoc_code || result.item?.sku || row.sku,
+        name: result.item?.tecdoc_name || result.item?.item_name || row.name,
+        tecdocBrand: result.item?.tecdoc_brand || row.tecdocBrand || '',
         quantity: result.quantity_added,
         total: result.quantity_in_bin,
         pending: result.catalog_status === 'PENDING',
@@ -160,8 +162,9 @@ export default function StockEntryScreen({ navigation }) {
       binId: bin.bin_id,
       binCode: bin.bin_code,
       ean,
-      sku: itemPreview.sku || ean,
-      name: itemPreview.item_name || 'Produs',
+      sku: itemPreview.tecdoc_code || itemPreview.sku || ean,
+      name: itemPreview.tecdoc_name || itemPreview.item_name || 'Produs',
+      tecdocBrand: itemPreview.tecdoc_brand || '',
       quantity: quantityNumber,
       total: null,
       pending: Boolean(itemPreview.provisional),
@@ -232,13 +235,20 @@ export default function StockEntryScreen({ navigation }) {
                   resizeMode="contain"
                   accessibilityLabel={`Imagine ${itemPreview?.item_name || itemPreview?.sku || ean}`}
                 />
-              ) : null}
+              ) : (
+                <View style={styles.productImagePlaceholder}>
+                  <Text style={styles.productImagePlaceholderText}>{hasTecDocMatch ? 'TECDOC' : 'EAN'}</Text>
+                </View>
+              )}
               <View style={styles.productCopy}>
-                <Text style={styles.productSku}>{itemPreview?.sku || ean}</Text>
-                <Text style={styles.productName}>{itemPreview?.item_name || 'Produs'}</Text>
+                {hasTecDocMatch ? <Text style={styles.tecdocBrand}>{itemPreview?.tecdoc_brand || 'TECDOC'}</Text> : null}
+                <Text style={styles.productName}>{itemPreview?.tecdoc_name || itemPreview?.item_name || 'Produs'}</Text>
+                <Text style={styles.productSku}>{itemPreview?.tecdoc_code || itemPreview?.sku || ean}</Text>
                 <Text style={styles.productEan}>COD SCANAT {ean}</Text>
+                {hasTecDocMatch
+                  ? <Text style={styles.knownBadge}>ECHIVALAT TECDOC</Text>
+                  : <Text style={styles.pendingBadge}>FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU</Text>}
               </View>
-              {itemPreview?.provisional ? <Text style={styles.pendingBadge}>TECDOC ÎN AȘTEPTARE</Text> : <Text style={styles.knownBadge}>IDENTIFICAT</Text>}
             </View>
 
             <Text style={styles.quantityLabel}>CANTITATE</Text>
@@ -276,6 +286,7 @@ export default function StockEntryScreen({ navigation }) {
                   <Image source={{ uri: entry.imageUrl }} style={styles.sessionImage} resizeMode="contain" />
                 ) : null}
                 <View style={styles.sessionCopy}>
+                  {entry.tecdocBrand ? <Text style={styles.sessionBrand}>{entry.tecdocBrand}</Text> : null}
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
                   <Text style={styles.sessionName}>{entry.name}</Text>
                   {entry.syncing ? <Text style={styles.sessionSyncing}>Se sincronizează…</Text> : null}
@@ -321,11 +332,14 @@ const styles = StyleSheet.create({
   productTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
   productCopy: { flex: 1, minWidth: 0 },
   productImage: { width: 92, height: 92, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.button, backgroundColor: '#fff' },
+  productImagePlaceholder: { width: 92, height: 92, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.button, backgroundColor: '#eff6ff' },
+  productImagePlaceholderText: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
+  tecdocBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   productSku: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 16, fontWeight: '800' },
   productName: { color: colors.textPrimary, fontSize: 14, fontWeight: '700', marginTop: 4 },
   productEan: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11, marginTop: 3 },
-  pendingBadge: { alignSelf: 'flex-start', color: colors.warning, borderWidth: 1, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
-  knownBadge: { alignSelf: 'flex-start', color: colors.success, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
+  pendingBadge: { alignSelf: 'flex-start', color: colors.danger, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, marginTop: 7, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
+  knownBadge: { alignSelf: 'flex-start', color: colors.success, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, marginTop: 7, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   quantityLabel: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginBottom: 6 },
   quantityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   quantityButton: { width: 54, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.inputBorder, backgroundColor: '#eff6ff' },
@@ -337,6 +351,7 @@ const styles = StyleSheet.create({
   sessionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card, backgroundColor: '#fff' },
   sessionImage: { width: 52, height: 52, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.button, backgroundColor: '#fff' },
   sessionCopy: { flex: 1, minWidth: 0 },
+  sessionBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   sessionSku: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sessionPending: { color: colors.warning, fontSize: 10, fontWeight: '700', marginTop: 3 },

@@ -115,6 +115,48 @@ def snapshot_inventory():
     if query.warehouse_id not in allowed_warehouses:
         return jsonify({"error": "scope_violation", "field": "warehouse_id"}), 403
 
+    # POS and accounting need the current warehouse projection, not the
+    # event-handoff guarantee of an exported snapshot. Railway installations
+    # commonly run only the API service (without the optional snapshot-keeper
+    # daemon), so ``live=1`` provides stateless keyset paging under the exact
+    # same token and warehouse scopes. The default path below remains the
+    # strongly-consistent snapshot contract used by external consumers.
+    live_mode = str(request.args.get("live") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if live_mode:
+        if query.cursor:
+            decoded = _decode_cursor(query.cursor)
+            if decoded is None or decoded["scan_id"] != "live":
+                return jsonify({"error": "invalid_cursor"}), 400
+            if decoded["warehouse_id"] != query.warehouse_id:
+                return jsonify({"error": "cursor_scope_violation"}), 403
+            last_w, last_i, last_b = decoded["warehouse_id"], decoded["item_id"], decoded["bin_id"]
+        else:
+            last_w, last_i, last_b = query.warehouse_id, 0, 0
+
+        rows = _run_keyset_query(
+            pg_snapshot_id=None,
+            warehouse_id=query.warehouse_id,
+            last_w=last_w,
+            last_i=last_i,
+            last_b=last_b,
+            limit=query.limit,
+        )
+        next_cursor = None
+        if len(rows) == query.limit:
+            tail = rows[-1]
+            next_cursor = _encode_cursor(
+                scan_id="live",
+                warehouse_id=query.warehouse_id,
+                item_id=tail["_item_id"],
+                bin_id=tail["_bin_id"],
+            )
+        return jsonify({
+            "snapshot_event_id": 0,
+            "consistency": "live",
+            "rows": [_strip_internal_keys(row) for row in rows],
+            "next_cursor": next_cursor,
+        })
+
     if query.cursor:
         decoded = _decode_cursor(query.cursor)
         if decoded is None:
@@ -296,7 +338,7 @@ def _wait_for_promotion(db, scan_id: str, timeout_s: float) -> Optional[dict]:
 
 
 def _run_keyset_query(
-    pg_snapshot_id: str,
+    pg_snapshot_id: Optional[str],
     warehouse_id: int,
     last_w: int,
     last_i: int,
@@ -315,14 +357,34 @@ def _run_keyset_query(
     try:
         cur = conn.cursor()
         cur.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
-        cur.execute("SET TRANSACTION SNAPSHOT %s", (pg_snapshot_id,))
+        if pg_snapshot_id:
+            cur.execute("SET TRANSACTION SNAPSHOT %s", (pg_snapshot_id,))
         cur.execute(
             """
             SELECT i.external_id::text AS item_external_id,
                    inv.item_id,
+                   i.sku,
+                   i.item_name,
+                   i.description,
+                   i.upc,
+                   i.mpn,
+                   i.barcode_aliases,
+                   i.category,
+                   d.scanned_ean,
+                   d.status AS catalog_status,
+                   d.tecdoc_code,
+                   d.tecdoc_brand,
+                   d.tecdoc_name,
+                   d.tecdoc_payload,
                    inv.warehouse_id,
                    b.external_id::text AS bin_external_id,
                    b.bin_code,
+                   b.aisle,
+                   b.row_num,
+                   b.level_num,
+                   b.position_num,
+                   z.zone_code,
+                   z.zone_name,
                    inv.bin_id,
                    inv.quantity_on_hand,
                    COALESCE(inv.quantity_allocated, 0) AS quantity_allocated,
@@ -330,7 +392,9 @@ def _run_keyset_query(
                    inv.lot_number
               FROM inventory inv
               JOIN items i ON i.item_id = inv.item_id
+              LEFT JOIN item_catalog_discoveries d ON d.item_id = inv.item_id
               JOIN bins b  ON b.bin_id  = inv.bin_id
+              LEFT JOIN zones z ON z.zone_id = b.zone_id
              WHERE inv.warehouse_id = %s
                AND (inv.warehouse_id, inv.item_id, inv.bin_id) > (%s, %s, %s)
              ORDER BY inv.warehouse_id, inv.item_id, inv.bin_id
@@ -349,9 +413,29 @@ def _run_keyset_query(
         out.append(
             {
                 "item_external_id": r["item_external_id"],
+                "sentry_item_id": r["item_id"],
+                "sku": r["sku"],
+                "item_name": r["item_name"],
+                "description": r["description"],
+                "upc": r["upc"],
+                "mpn": r["mpn"],
+                "barcode_aliases": r["barcode_aliases"],
+                "category": r["category"],
+                "scanned_ean": r["scanned_ean"],
+                "catalog_status": r["catalog_status"],
+                "tecdoc_code": r["tecdoc_code"],
+                "tecdoc_brand": r["tecdoc_brand"],
+                "tecdoc_name": r["tecdoc_name"],
+                "tecdoc_payload": r["tecdoc_payload"],
                 "warehouse_id": r["warehouse_id"],
                 "bin_external_id": r["bin_external_id"],
                 "bin_code": r["bin_code"],
+                "aisle": r["aisle"],
+                "row_num": r["row_num"],
+                "level_num": r["level_num"],
+                "position_num": r["position_num"],
+                "zone_code": r["zone_code"],
+                "zone_name": r["zone_name"],
                 "quantity_on_hand": r["quantity_on_hand"],
                 "quantity_allocated": r["quantity_allocated"],
                 "quantity_available": r["quantity_available"],
