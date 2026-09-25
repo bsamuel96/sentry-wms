@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useScrollToTop } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
@@ -179,6 +179,38 @@ export default function StockEntryScreen({ navigation }) {
     syncEntry(optimisticEntry);
   }
 
+  async function removeEntry(entry) {
+    if (entry.syncing || entry.deleting) return;
+    if (!entry.serverId) {
+      setLastEntries((current) => current.filter((row) => row.id !== entry.id));
+      return;
+    }
+    setLastEntries((current) => current.map((row) => (
+      row.id === entry.id ? { ...row, deleting: true } : row
+    )));
+    try {
+      await client.delete(`/api/inventory/stock-entry/${entry.serverId}`);
+      setLastEntries((current) => current.filter((row) => row.id !== entry.id));
+    } catch (removeError) {
+      setLastEntries((current) => current.map((row) => (
+        row.id === entry.id ? { ...row, deleting: false } : row
+      )));
+      showError(removeError.response?.data?.error || 'Produsul nu a putut fi scos din sesiune.');
+    }
+  }
+
+  function confirmRemoveEntry(entry) {
+    if (entry.syncing || entry.deleting) return;
+    Alert.alert(
+      'Scoți produsul din sesiune?',
+      `${entry.sku} · ${entry.quantity} buc. vor fi retrase din ${entry.binCode}.`,
+      [
+        { text: 'PĂSTREAZĂ', style: 'cancel' },
+        { text: 'SCOATE', style: 'destructive', onPress: () => removeEntry(entry) },
+      ],
+    );
+  }
+
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader title="LOCAȚII ȘI STOC" onBack={() => navigation.goBack()} />
@@ -297,9 +329,20 @@ export default function StockEntryScreen({ navigation }) {
                   ) : null}
                   {!entry.syncing && !entry.failed && entry.pending ? <Text style={styles.sessionPending}>În așteptare TecDoc</Text> : null}
                 </View>
-                <View style={styles.sessionQuantity}>
-                  <Text style={styles.sessionAdded}>+{entry.quantity}</Text>
-                  <Text style={styles.sessionTotal}>{entry.total == null ? entry.binCode : `${entry.total} în locație`}</Text>
+                <View style={styles.sessionActions}>
+                  <View style={styles.sessionQuantity}>
+                    <Text style={styles.sessionAdded}>+{entry.quantity}</Text>
+                    <Text style={styles.sessionTotal}>{entry.total == null ? entry.binCode : `${entry.total} în locație`}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.sessionDelete, (entry.syncing || entry.deleting) && styles.sessionDeleteDisabled]}
+                    onPress={() => confirmRemoveEntry(entry)}
+                    disabled={entry.syncing || entry.deleting}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Scoate ${entry.sku} din sesiune`}
+                  >
+                    <Text style={styles.sessionDeleteIcon}>{entry.deleting ? '…' : '🗑︎'}</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -358,6 +401,10 @@ const styles = StyleSheet.create({
   sessionSyncing: { color: colors.accentRed, fontSize: 10, fontWeight: '700', marginTop: 3 },
   sessionFailed: { color: colors.danger, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginTop: 5 },
   sessionQuantity: { alignItems: 'flex-end' },
+  sessionActions: { alignItems: 'flex-end', gap: 5 },
   sessionAdded: { color: colors.success, fontFamily: fonts.mono, fontSize: 16, fontWeight: '800' },
   sessionTotal: { color: colors.textMuted, fontSize: 10, marginTop: 2 },
+  sessionDelete: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#fecaca', borderRadius: radii.small, backgroundColor: '#fff7f7' },
+  sessionDeleteDisabled: { opacity: 0.35 },
+  sessionDeleteIcon: { color: colors.danger, fontSize: 17 },
 });

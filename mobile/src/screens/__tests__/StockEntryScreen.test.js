@@ -37,4 +37,11 @@ describe('instant stock-entry feedback', () => {
     expect(source).toContain('ECHIVALAT TECDOC');
     expect(source).toContain('FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU');
   });
+
+  it('can remove a synced session row and reverse its stock entry', () => {
+    expect(source).toMatch(/client\.delete\(`\/api\/inventory\/stock-entry\/\$\{entry\.serverId\}`\)/);
+    expect(source).toMatch(/confirmRemoveEntry\(entry\)/);
+    expect(source).toContain('Scoți produsul din sesiune?');
+    expect(source).toContain("'🗑︎'");
+  });
 });

@@ -22,6 +22,7 @@ from services.inventory_service import (
     add_inventory,
     release_satisfiable_backorders,
     RELEASE_SOURCE_ADJUSTMENT,
+    set_inventory_quantity,
 )
 from services.catalog_media import catalog_image_urls
 from services.webhook_dispatcher.backorder_notifier import dispatch_backorder_notification
@@ -433,6 +434,105 @@ def stock_entry():
     payload = _stock_entry_payload(g.db, entry)
     payload["created_provisional_item"] = provisional
     return jsonify(payload), 201
+
+
+@inventory_bp.route("/stock-entry/<int:stock_entry_id>", methods=["DELETE"])
+@require_auth
+@with_db
+def reverse_stock_entry(stock_entry_id):
+    """Undo one row created by the current mobile stock-entry session."""
+    user = g.current_user or {}
+    if user.get("role") != "ADMIN" and "receive" not in set(user.get("allowed_functions") or []):
+        return jsonify({"error": "Nu ai permisiunea Recepție pentru această operație."}), 403
+    if not _mobile_stock_entry_schema_ready(g.db):
+        return jsonify({
+            "error": "Fluxul Locații și stoc nu este încă activat în baza de date.",
+            "code": "mobile_stock_entry_schema_missing",
+        }), 503
+
+    entry = g.db.execute(text("""
+        SELECT stock_entry_id, idempotency_key, item_id, bin_id,
+               warehouse_id, quantity, entered_by
+        FROM mobile_stock_entries
+        WHERE stock_entry_id = :entry_id
+        FOR UPDATE
+    """), {"entry_id": stock_entry_id}).fetchone()
+    if not entry:
+        return jsonify({"error": "Poziția nu mai există în sesiunea de introducere."}), 404
+
+    allowed, denied = check_warehouse_access(entry.warehouse_id)
+    if not allowed:
+        return denied
+    actor = str(user.get("username") or user.get("user_id") or "unknown")
+    if user.get("role") != "ADMIN" and str(entry.entered_by) != actor:
+        return jsonify({"error": "Poți scoate doar produsele introduse de tine."}), 403
+
+    inventory_row = g.db.execute(text("""
+        SELECT inventory_id, quantity_on_hand, quantity_allocated
+        FROM inventory
+        WHERE item_id = :item_id AND bin_id = :bin_id
+          AND lot_number IS NULL
+        FOR UPDATE
+    """), {"item_id": entry.item_id, "bin_id": entry.bin_id}).fetchone()
+    resulting_quantity = (
+        inventory_row.quantity_on_hand - entry.quantity if inventory_row else -1
+    )
+    if (
+        not inventory_row
+        or resulting_quantity < 0
+        or resulting_quantity < inventory_row.quantity_allocated
+    ):
+        return jsonify({
+            "error": "Cantitatea nu mai poate fi retrasă: o parte din stoc a fost deja rezervată sau consumată."
+        }), 409
+
+    set_inventory_quantity(g.db, inventory_row.inventory_id, resulting_quantity)
+    adjustment = g.db.execute(text("""
+        INSERT INTO inventory_adjustments (
+            item_id, bin_id, warehouse_id, quantity_change,
+            reason_code, reason_detail, status, adjusted_by, external_id
+        ) VALUES (
+            :item_id, :bin_id, :warehouse_id, :quantity,
+            'CORRECTION', :detail, 'APPROVED', :actor, :external_id
+        )
+        RETURNING adjustment_id
+    """), {
+        "item_id": entry.item_id,
+        "bin_id": entry.bin_id,
+        "warehouse_id": entry.warehouse_id,
+        "quantity": -entry.quantity,
+        "detail": f"Anulare poziție sesiune mobilă #{entry.stock_entry_id}",
+        "actor": actor,
+        "external_id": str(uuid.uuid4()),
+    }).fetchone()
+    g.db.execute(
+        text("DELETE FROM mobile_stock_entries WHERE stock_entry_id = :entry_id"),
+        {"entry_id": entry.stock_entry_id},
+    )
+    write_audit_log(
+        g.db,
+        action_type=ACTION_ADJUST,
+        entity_type="ITEM",
+        entity_id=entry.item_id,
+        user_id=actor,
+        warehouse_id=entry.warehouse_id,
+        details={
+            "operation": "mobile_stock_entry_reversed",
+            "stock_entry_id": entry.stock_entry_id,
+            "idempotency_key": str(entry.idempotency_key),
+            "adjustment_id": adjustment.adjustment_id,
+            "bin_id": entry.bin_id,
+            "quantity_change": -entry.quantity,
+            "quantity_in_bin": resulting_quantity,
+        },
+    )
+    g.db.commit()
+    return jsonify({
+        "ok": True,
+        "stock_entry_id": entry.stock_entry_id,
+        "quantity_removed": entry.quantity,
+        "quantity_in_bin": resulting_quantity,
+    })
 
 
 @inventory_bp.route("/cycle-count/create", methods=["POST"])
