@@ -9,6 +9,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build:pwa": "node scripts/build-pwa.mjs",
+    "build:pwa:admin": "node scripts/build-pwa.mjs --base-path /scanner --output-dir ../admin/public/scanner",
     "build:apk": "npx eas-cli build --platform android --profile preview",
     "build:dev": "npx eas-cli build --platform android --profile development",
     "build:prod": "npx eas-cli build --platform android --profile production",

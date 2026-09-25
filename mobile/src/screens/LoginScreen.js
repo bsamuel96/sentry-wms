@@ -5,8 +5,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth/AuthContext';
 import client, { getStoredApiUrl, setApiUrl, hasStoredApiUrl } from '../api/client';
 import { colors, fonts, radii } from '../theme/styles';
+import Constants from 'expo-constants';
+import PwaStatusBanner from '../components/PwaStatusBanner';
 
 const SENTRY_LOGIN_RENDERED = '__sentry_login_rendered__';
+const APP_VERSION = Constants.expoConfig?.version || '1.46.3';
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -134,6 +137,7 @@ export default function LoginScreen() {
         style={styles.screen}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <PwaStatusBanner />
         <View style={styles.container}>
           <View style={styles.logoSection}>
             <Text style={styles.logoText}>SENTRY</Text>
@@ -178,6 +182,7 @@ export default function LoginScreen() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <PwaStatusBanner />
       <View style={styles.container}>
         <View style={styles.logoSection}>
           <Text style={styles.logoText}>SENTRY</Text>
@@ -214,7 +219,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <TouchableOpacity style={styles.serverInfo} onPress={openServerModal}>
-            <Text style={styles.version}>v1.38.1 Autosav</Text>
+            <Text style={styles.version}>v{APP_VERSION} Autosav</Text>
             {serverDisplay ? (
               <Text style={styles.serverUrlText} numberOfLines={1}>{serverDisplay}</Text>
             ) : null}

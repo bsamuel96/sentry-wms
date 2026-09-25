@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -29,6 +30,7 @@ const BARCODE_TYPES = [
 ];
 
 export default function CameraScannerModal({ visible, onClose, onScan }) {
+  const isWeb = Platform.OS === 'web';
   const [permission, requestPermission] = useCameraPermissions();
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
@@ -128,7 +130,7 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
             <CameraView
               style={StyleSheet.absoluteFill}
               facing="back"
-              enableTorch={torchEnabled}
+              enableTorch={isWeb ? false : torchEnabled}
               barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES }}
               onBarcodeScanned={scanArmed && !scanLocked ? handleBarcodeScanned : undefined}
               onCameraReady={handleCameraReady}
@@ -159,16 +161,18 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
                     ? 'APASĂ PENTRU SCANARE'
                     : 'SE PREGĂTEȘTE CAMERA…'}
               </Text>
-              <TouchableOpacity
-                style={[styles.torchButton, torchEnabled && styles.torchButtonActive]}
-                onPress={() => setTorchEnabled((current) => !current)}
-                accessibilityRole="button"
-                accessibilityLabel={torchEnabled ? 'Oprește lanterna' : 'Pornește lanterna'}
-              >
-                <Text style={[styles.torchButtonText, torchEnabled && styles.torchButtonTextActive]}>
-                  {torchEnabled ? 'OPREȘTE LANTERNA' : 'PORNEȘTE LANTERNA'}
-                </Text>
-              </TouchableOpacity>
+              {!isWeb ? (
+                <TouchableOpacity
+                  style={[styles.torchButton, torchEnabled && styles.torchButtonActive]}
+                  onPress={() => setTorchEnabled((current) => !current)}
+                  accessibilityRole="button"
+                  accessibilityLabel={torchEnabled ? 'Oprește lanterna' : 'Pornește lanterna'}
+                >
+                  <Text style={[styles.torchButtonText, torchEnabled && styles.torchButtonTextActive]}>
+                    {torchEnabled ? 'OPREȘTE LANTERNA' : 'PORNEȘTE LANTERNA'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         ) : (
@@ -183,7 +187,9 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
               </TouchableOpacity>
             ) : (
               <Text style={styles.settingsHint}>
-                Deschide Setări Android → Aplicații → Sentry WMS → Permisiuni → Cameră.
+                {isWeb
+                  ? 'În Safari, deschide aA → Configurări site web → Cameră → Permite.'
+                  : 'Deschide Setări Android → Aplicații → Sentry WMS → Permisiuni → Cameră.'}
               </Text>
             )}
           </Pressable>

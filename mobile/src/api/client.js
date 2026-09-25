@@ -1,8 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { getAuthItem } from '../auth/secureStorage';
 
 // Build-time default from .env / eas.json env
-const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+const WEB_PRODUCTION_API_URL = Platform.OS === 'web'
+  && process.env.NODE_ENV === 'production'
+  && typeof window !== 'undefined'
+  ? window.location.origin
+  : '';
+const DEFAULT_API_URL = WEB_PRODUCTION_API_URL
+  || process.env.EXPO_PUBLIC_API_URL
+  || 'http://localhost:5000';
 const API_URL_KEY = 'sentry_api_url';
 
 // Runtime-configurable API URL (cached in memory after first load)
@@ -16,6 +24,10 @@ let _initPromise = null;
 export async function initApiUrl() {
   if (_initPromise) return _initPromise;
   _initPromise = (async () => {
+    if (WEB_PRODUCTION_API_URL) {
+      _cachedApiUrl = WEB_PRODUCTION_API_URL;
+      return;
+    }
     const stored = await AsyncStorage.getItem(API_URL_KEY).catch(() => null);
     _cachedApiUrl = stored || DEFAULT_API_URL;
   })();
@@ -34,6 +46,10 @@ async function getApiUrl() {
  * Takes effect immediately  -  no app restart needed.
  */
 export async function setApiUrl(url) {
+  if (WEB_PRODUCTION_API_URL) {
+    _cachedApiUrl = WEB_PRODUCTION_API_URL;
+    return;
+  }
   const trimmed = url.replace(/\/+$/, '').trim();
   _cachedApiUrl = trimmed;
   await AsyncStorage.setItem(API_URL_KEY, trimmed).catch(() => {});
@@ -41,11 +57,13 @@ export async function setApiUrl(url) {
 
 /** Get the current API URL (for display in settings). */
 export async function getStoredApiUrl() {
+  if (WEB_PRODUCTION_API_URL) return WEB_PRODUCTION_API_URL;
   return (await AsyncStorage.getItem(API_URL_KEY).catch(() => null)) || DEFAULT_API_URL;
 }
 
 /** True if the user has explicitly saved a server URL. */
 export async function hasStoredApiUrl() {
+  if (WEB_PRODUCTION_API_URL) return true;
   const stored = await AsyncStorage.getItem(API_URL_KEY).catch(() => null);
   return stored !== null || Boolean(process.env.EXPO_PUBLIC_API_URL);
 }

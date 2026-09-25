@@ -12,6 +12,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 import { clearAllAuthFromStores } from './authStorageClear';
 import { migrateAsyncStorageToSecureStore } from './authStorageMigration';
@@ -23,17 +24,29 @@ export const AUTH_STORAGE_KEYS = [
   'login_timestamp',
 ];
 
+// SecureStore is backed by the native keychain and is unavailable in a
+// browser. The installed PWA uses AsyncStorage (localStorage on web) for its
+// session. Operational API responses are never persisted by the service
+// worker, and logout still clears every auth key.
+const webAuthStore = {
+  getItemAsync: (key) => AsyncStorage.getItem(key),
+  setItemAsync: (key, value) => AsyncStorage.setItem(key, value),
+  deleteItemAsync: (key) => AsyncStorage.removeItem(key),
+};
+
+const authStore = Platform.OS === 'web' ? webAuthStore : SecureStore;
+
 export async function getAuthItem(key) {
-  return SecureStore.getItemAsync(key);
+  return authStore.getItemAsync(key);
 }
 
 export async function setAuthItem(key, value) {
-  return SecureStore.setItemAsync(key, value);
+  return authStore.setItemAsync(key, value);
 }
 
 export async function deleteAuthItem(key) {
   try {
-    await SecureStore.deleteItemAsync(key);
+    await authStore.deleteItemAsync(key);
   } catch {
     // deleteItemAsync throws if the key is not set; callers treat delete as idempotent.
   }
@@ -43,9 +56,12 @@ export async function clearAllAuth() {
   // V-104: clearAllAuthFromStores (in authStorageClear.js) is the pure
   // form suitable for unit tests with in-memory mocks. Here we bind it
   // to the real AsyncStorage + SecureStore backends.
-  return clearAllAuthFromStores(AUTH_STORAGE_KEYS, AsyncStorage, SecureStore);
+  return clearAllAuthFromStores(AUTH_STORAGE_KEYS, AsyncStorage, authStore);
 }
 
 export async function runAuthStorageMigration() {
-  return migrateAsyncStorageToSecureStore(AUTH_STORAGE_KEYS, AsyncStorage, SecureStore);
+  // Running the native migration against the same web storage would copy and
+  // then delete the session. There is nothing to migrate in a browser.
+  if (Platform.OS === 'web') return [];
+  return migrateAsyncStorageToSecureStore(AUTH_STORAGE_KEYS, AsyncStorage, authStore);
 }

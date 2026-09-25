@@ -12,6 +12,10 @@ import { OperationGridSkeleton } from '../components/LoadingSkeleton';
 import client, { getStoredApiUrl, setApiUrl } from '../api/client';
 import { colors, fonts, radii, spacing } from '../theme/styles';
 import { parseWarehouseHierarchyBarcode } from '../utils/barcodes';
+import PwaStatusBanner from '../components/PwaStatusBanner';
+import Constants from 'expo-constants';
+
+const APP_VERSION = Constants.expoConfig?.version || '1.46.3';
 
 const FUNCTIONS = [
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
@@ -263,6 +267,8 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
+      <PwaStatusBanner />
+
       <Modal visible={showUserMenu} transparent animationType="fade">
         <Pressable style={styles.menuOverlay} onPress={() => setShowUserMenu(false)}>
           <View style={styles.menuCard}>
@@ -495,7 +501,7 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
           <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
         </TouchableOpacity>
-        <Text style={styles.footerText}>v1.45.0 Autosav / {warehouseName}</Text>
+        <Text style={styles.footerText}>v{APP_VERSION} Autosav / {warehouseName}</Text>
       </View>
 
       {/* Info modal (replaces Alert.alert for lookups) */}
