@@ -15,6 +15,15 @@ def _query_val(sql, params=None):
     return row[0] if row else None
 
 
+def _execute(sql, params=None):
+    conn = get_raw_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, params or ())
+    finally:
+        cur.close()
+
+
 def _create_batch(client, auth_headers, so_ids=None):
     """Create a pick batch for the given SOs (default: SO-2026-001 and SO-2026-002)."""
     identifiers = so_ids or ["SO-2026-001", "SO-2026-002"]
@@ -130,6 +139,54 @@ class TestNextTask:
         data = resp.get_json()
         assert "pick_task_id" in data
         assert data["status"] == "PENDING"
+
+    def test_get_next_task_exposes_confirmed_tecdoc_product(self, client, auth_headers):
+        create_resp = _create_batch(client, auth_headers)
+        batch_id = create_resp.get_json()["batch_id"]
+        item_id = _query_val(
+            """
+            SELECT item_id
+            FROM pick_tasks
+            WHERE batch_id = %s AND status = 'PENDING'
+            ORDER BY pick_sequence, pick_task_id
+            LIMIT 1
+            """,
+            (batch_id,),
+        )
+        _execute(
+            """
+            INSERT INTO item_catalog_discoveries (
+                item_id, scanned_ean, status, tecdoc_article_id,
+                tecdoc_code, tecdoc_brand, tecdoc_name,
+                tecdoc_match_type, tecdoc_payload, created_by
+            ) VALUES (
+                %s, '4006381333931', 'MATCHED', '123',
+                'C113', 'DOLZ', 'Pompă apă', 'ean',
+                %s::jsonb, 'admin'
+            )
+            ON CONFLICT (item_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                tecdoc_article_id = EXCLUDED.tecdoc_article_id,
+                tecdoc_code = EXCLUDED.tecdoc_code,
+                tecdoc_brand = EXCLUDED.tecdoc_brand,
+                tecdoc_name = EXCLUDED.tecdoc_name,
+                tecdoc_match_type = EXCLUDED.tecdoc_match_type,
+                tecdoc_payload = EXCLUDED.tecdoc_payload
+            """,
+            (item_id, '{"imageUrl":"https://cdn.example.test/c113.jpg"}'),
+        )
+
+        response = client.get(
+            f"/api/picking/batch/{batch_id}/next", headers=auth_headers
+        )
+        assert response.status_code == 200
+        product = response.get_json()
+        assert product["catalog_status"] == "MATCHED"
+        assert product["tecdoc_code"] == "C113"
+        assert product["tecdoc_brand"] == "DOLZ"
+        assert product["tecdoc_name"] == "Pompă apă"
+        assert product["image_url"] == "https://cdn.example.test/c113.jpg"
+        assert product["images"] == ["https://cdn.example.test/c113.jpg"]
 
 
 class TestConfirmPick:

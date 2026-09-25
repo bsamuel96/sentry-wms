@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, ScrollView, Modal, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, ActivityIndicator, StyleSheet, Image } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
@@ -163,6 +163,12 @@ export default function PickWalkScreen({ navigation, route }) {
     return null;
   })();
   const isLastItem = task && taskList.length > 0 && !nextTask;
+  const taskImageUrl = task?.image_url || task?.images?.[0];
+  const taskCode = task?.tecdoc_code || task?.sku;
+  const taskName = task?.tecdoc_name || task?.item_name;
+  const nextTaskImageUrl = nextTask?.image_url || nextTask?.images?.[0];
+  const nextTaskCode = nextTask?.tecdoc_code || nextTask?.sku;
+  const nextTaskName = nextTask?.tecdoc_name || nextTask?.item_name;
 
   return (
     <View style={screenStyles.screen}>
@@ -237,10 +243,24 @@ export default function PickWalkScreen({ navigation, route }) {
             activeOpacity={0.7}
           >
             <View style={styles.itemCardInner}>
-              <View style={{ flex: 1 }}>
+              {taskImageUrl ? (
+                <Image
+                  source={{ uri: taskImageUrl }}
+                  style={styles.productImage}
+                  resizeMode="contain"
+                  accessibilityLabel={`Imagine ${taskName || taskCode}`}
+                />
+              ) : (
+                <View style={styles.productImagePlaceholder}>
+                  <Text style={styles.productImagePlaceholderText}>{task?.tecdoc_code ? 'TD' : 'EAN'}</Text>
+                </View>
+              )}
+              <View style={styles.itemIdentity}>
                 <Text style={styles.itemLabel}>ITEM</Text>
-                <Text style={styles.sku}>{task.sku}</Text>
-                <Text style={styles.itemName}>{task.item_name}</Text>
+                {task.tecdoc_brand ? <Text style={styles.productBrand}>{task.tecdoc_brand}</Text> : null}
+                <Text style={styles.sku}>{taskCode}</Text>
+                <Text style={styles.itemName}>{taskName}</Text>
+                {task.upc ? <Text style={styles.productEan}>EAN {task.upc}</Text> : null}
               </View>
               <View style={styles.qtySection}>
                 <Text style={styles.itemLabel}>QTY</Text>
@@ -272,12 +292,20 @@ export default function PickWalkScreen({ navigation, route }) {
           {/* Next item preview */}
           {taskList.length > 0 && (nextTask ? (
             <View style={styles.nextCard}>
-              <Text style={styles.nextLabel}>NEXT</Text>
-              <Text style={styles.nextSku}>{nextTask.sku}</Text>
-              <Text style={styles.nextName}>{nextTask.item_name}</Text>
-              <View style={styles.nextBinRow}>
-                <Text style={styles.nextBinLabel}>BIN</Text>
-                <Text style={styles.nextBinCode}>{nextTask.bin_code}</Text>
+              <View style={styles.nextProductRow}>
+                {nextTaskImageUrl ? (
+                  <Image source={{ uri: nextTaskImageUrl }} style={styles.nextProductImage} resizeMode="contain" />
+                ) : null}
+                <View style={styles.nextProductCopy}>
+                  <Text style={styles.nextLabel}>NEXT</Text>
+                  {nextTask.tecdoc_brand ? <Text style={styles.nextBrand}>{nextTask.tecdoc_brand}</Text> : null}
+                  <Text style={styles.nextSku}>{nextTaskCode}</Text>
+                  <Text style={styles.nextName}>{nextTaskName}</Text>
+                  <View style={styles.nextBinRow}>
+                    <Text style={styles.nextBinLabel}>BIN</Text>
+                    <Text style={styles.nextBinCode}>{nextTask.bin_code}</Text>
+                  </View>
+                </View>
               </View>
             </View>
           ) : isLastItem ? (
@@ -387,14 +415,23 @@ export default function PickWalkScreen({ navigation, route }) {
             <Text style={modalStyles.title}>ITEM DETAILS</Text>
             {task && (
               <View>
+                {taskImageUrl ? (
+                  <Image source={{ uri: taskImageUrl }} style={styles.detailImage} resizeMode="contain" />
+                ) : null}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>SKU</Text>
-                  <Text style={styles.detailValue}>{task.sku}</Text>
+                  <Text style={styles.detailLabel}>COD</Text>
+                  <Text style={styles.detailValue}>{taskCode}</Text>
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>NAME</Text>
-                  <Text style={styles.detailValue}>{task.item_name}</Text>
+                  <Text style={styles.detailValue}>{taskName}</Text>
                 </View>
+                {task.tecdoc_brand ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>BRAND</Text>
+                    <Text style={styles.detailValue}>{task.tecdoc_brand}</Text>
+                  </View>
+                ) : null}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>UPC</Text>
                   <Text style={styles.detailValue}>{task.upc || '-'}</Text>
@@ -536,6 +573,12 @@ const styles = StyleSheet.create({
     padding: 12, marginBottom: 10,
   },
   itemCardInner: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  itemIdentity: { flex: 1, minWidth: 0 },
+  productImage: { width: 82, height: 82, marginRight: 12, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: colors.cardBg },
+  productImagePlaceholder: { width: 82, height: 82, marginRight: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: '#eff6ff' },
+  productImagePlaceholderText: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 11, fontWeight: '800' },
+  productBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', letterSpacing: 0.4, marginBottom: 2 },
+  productEan: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 9, marginTop: 3 },
   itemLabel: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3, marginBottom: 2 },
   sku: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   itemName: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
@@ -553,6 +596,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
     padding: 10, marginBottom: 10,
   },
+  nextProductRow: { flexDirection: 'row', alignItems: 'center' },
+  nextProductImage: { width: 54, height: 54, marginRight: 10, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: colors.cardBg },
+  nextProductCopy: { flex: 1, minWidth: 0 },
+  nextBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 8, fontWeight: '800' },
   nextLabel: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '600', color: colors.textMuted, letterSpacing: 1, marginBottom: 4 },
   nextSku: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.textPrimary },
   nextName: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
@@ -582,6 +629,7 @@ const styles = StyleSheet.create({
   earlySubmitQty: { fontFamily: fonts.mono, fontSize: 13, color: colors.accentRed },
 
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
+  detailImage: { width: '100%', height: 140, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: colors.cardBg },
   detailLabel: { fontFamily: fonts.mono, fontSize: 11, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
   detailValue: { fontFamily: fonts.mono, fontSize: 13, color: colors.textPrimary, textAlign: 'right', flex: 1, marginLeft: 12 },
   detailOrderRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingLeft: 8 },

@@ -6,7 +6,18 @@ import {
   validScannedProductCode,
 } from '../inventoryDiscovery';
 const ean = '4006381333931';
-const item = { item_id: 12, sku: 'F1', item_name: 'Filter', upc: ean };
+const item = {
+  item_id: 12,
+  sku: 'F1',
+  item_name: 'Filter',
+  upc: ean,
+  catalog_status: 'MATCHED',
+  tecdoc_code: 'C113',
+  tecdoc_brand: 'DOLZ',
+  tecdoc_name: 'Pompă apă',
+  image_url: 'https://cdn.example.test/c113.jpg',
+  images: ['https://cdn.example.test/c113.jpg'],
+};
 describe('unknown inventory EAN', () => {
   it('accepts supplier barcodes for deferred matching without forcing GTIN length', () => {
     expect(normalizeScannedProductCode(' 1654644071 ')).toBe('1654644071');
@@ -28,6 +39,13 @@ describe('unknown inventory EAN', () => {
     lines = addDiscoveredCountItem(lines, item, 1);
     expect(lines).toHaveLength(1);
     expect(lines[0].counted_quantity).toBe('2');
+    expect(lines[0]).toMatchObject({
+      catalog_status: 'MATCHED',
+      tecdoc_code: 'C113',
+      tecdoc_brand: 'DOLZ',
+      tecdoc_name: 'Pompă apă',
+      image_url: 'https://cdn.example.test/c113.jpg',
+    });
     expect(addDiscoveredCountItem([], item, 0)[0].counted_quantity).toBe('0');
   });
 });

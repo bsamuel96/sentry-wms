@@ -85,6 +85,56 @@ class TestGetCycleCount:
         resp = client.get("/api/inventory/cycle-count/9999", headers=auth_headers)
         assert resp.status_code == 404
 
+    def test_get_count_exposes_confirmed_tecdoc_product(self, client, auth_headers):
+        connection = get_raw_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                INSERT INTO item_catalog_discoveries (
+                    item_id, scanned_ean, status, tecdoc_article_id,
+                    tecdoc_code, tecdoc_brand, tecdoc_name,
+                    tecdoc_match_type, tecdoc_payload, created_by
+                ) VALUES (
+                    1, '4006381333931', 'MATCHED', '123',
+                    'C113', 'DOLZ', 'Pompă apă', 'ean',
+                    %s::jsonb, 'admin'
+                )
+                ON CONFLICT (item_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    tecdoc_article_id = EXCLUDED.tecdoc_article_id,
+                    tecdoc_code = EXCLUDED.tecdoc_code,
+                    tecdoc_brand = EXCLUDED.tecdoc_brand,
+                    tecdoc_name = EXCLUDED.tecdoc_name,
+                    tecdoc_match_type = EXCLUDED.tecdoc_match_type,
+                    tecdoc_payload = EXCLUDED.tecdoc_payload
+                """,
+                ('{"imageUrl":"https://cdn.example.test/c113.jpg"}',),
+            )
+        finally:
+            cursor.close()
+
+        create_resp = client.post(
+            "/api/inventory/cycle-count/create",
+            json={"warehouse_id": 1, "bin_ids": [3]},
+            headers=auth_headers,
+        )
+        count_id = create_resp.get_json()["counts"][0]["count_id"]
+
+        response = client.get(
+            f"/api/inventory/cycle-count/{count_id}", headers=auth_headers
+        )
+        assert response.status_code == 200
+        product = next(
+            line for line in response.get_json()["lines"] if line["item_id"] == 1
+        )
+        assert product["catalog_status"] == "MATCHED"
+        assert product["tecdoc_code"] == "C113"
+        assert product["tecdoc_brand"] == "DOLZ"
+        assert product["tecdoc_name"] == "Pompă apă"
+        assert product["image_url"] == "https://cdn.example.test/c113.jpg"
+        assert product["images"] == ["https://cdn.example.test/c113.jpg"]
+
 
 class TestSubmitCycleCount:
     def _create_count_for_bin(self, client, auth_headers, bin_id=3):

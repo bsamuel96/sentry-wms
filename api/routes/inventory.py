@@ -105,6 +105,35 @@ def _stock_entry_payload(db, row, *, repeated=False):
     }
 
 
+def _cycle_count_line_payload(line):
+    """Expose the confirmed TecDoc identity in the handheld count workflow."""
+    image_urls = catalog_image_urls(line.tecdoc_payload)
+    return {
+        "count_line_id": line.count_line_id,
+        "item_id": line.item_id,
+        "sku": line.sku,
+        "item_name": line.item_name,
+        "upc": line.upc,
+        "catalog_status": line.catalog_status or "KNOWN",
+        "tecdoc_article_id": line.tecdoc_article_id,
+        "tecdoc_code": line.tecdoc_code,
+        "tecdoc_brand": line.tecdoc_brand,
+        "tecdoc_name": line.tecdoc_name,
+        "tecdoc_match_type": line.tecdoc_match_type,
+        "image_url": image_urls[0] if image_urls else None,
+        "images": image_urls,
+        "expected_quantity": line.expected_quantity,
+        "counted_quantity": line.counted_quantity,
+        "variance": (
+            line.counted_quantity - line.expected_quantity
+            if line.counted_quantity is not None
+            else None
+        ),
+        "scanned": line.scanned,
+        "unexpected": line.unexpected if hasattr(line, "unexpected") else False,
+    }
+
+
 def _bin_coordinates(value):
     parts = [part.strip() for part in str(value or "").split("-") if part.strip()]
     return {
@@ -527,9 +556,13 @@ def get_cycle_count(count_id):
             """
             SELECT ccl.count_line_id, ccl.item_id, i.sku, i.item_name, i.upc,
                    ccl.expected_quantity, ccl.counted_quantity,
-                   ccl.scanned, ccl.unexpected
+                   ccl.scanned, ccl.unexpected,
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload
             FROM cycle_count_lines ccl
             JOIN items i ON i.item_id = ccl.item_id
+            LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             WHERE ccl.count_id = :cid
             ORDER BY ccl.count_line_id
             """
@@ -555,21 +588,7 @@ def get_cycle_count(count_id):
             "created_at": cc.created_at.isoformat() if cc.created_at else None,
         },
         "show_expected": show_expected,
-        "lines": [
-            {
-                "count_line_id": l.count_line_id,
-                "item_id": l.item_id,
-                "sku": l.sku,
-                "item_name": l.item_name,
-                "upc": l.upc,
-                "expected_quantity": l.expected_quantity,
-                "counted_quantity": l.counted_quantity,
-                "variance": (l.counted_quantity - l.expected_quantity) if l.counted_quantity is not None else None,
-                "scanned": l.scanned,
-                "unexpected": l.unexpected if hasattr(l, "unexpected") else False,
-            }
-            for l in lines
-        ],
+        "lines": [_cycle_count_line_payload(line) for line in lines],
     })
 
 

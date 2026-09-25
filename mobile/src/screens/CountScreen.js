@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
-import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet, Image } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
 import { addDiscoveredCountItem, findKnownCountItem } from '../utils/inventoryDiscovery';
@@ -245,21 +245,41 @@ export default function CountScreen({ navigation }) {
               const expected = line.expected_quantity;
               const counted = parseInt(line.counted_quantity, 10);
               const hasVariance = !isNaN(counted) && counted !== expected;
+              const hasTecDocMatch = line.catalog_status === 'MATCHED' || Boolean(line.tecdoc_code);
+              const imageUrl = line.image_url || line.images?.[0];
+              const productCode = line.tecdoc_code || line.sku;
+              const productName = line.tecdoc_name || line.item_name;
               return (
                 <View
                   key={line.count_line_id || `unexpected-${index}`}
                   style={[listStyles.row, hasVariance && styles.lineVariance, line.unexpected && styles.lineUnexpected]}
                 >
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Text style={listStyles.sku}>{line.sku}</Text>
+                  {imageUrl ? (
+                    <Image
+                      source={{ uri: imageUrl }}
+                      style={styles.productImage}
+                      resizeMode="contain"
+                      accessibilityLabel={`Imagine ${productName || productCode}`}
+                    />
+                  ) : (
+                    <View style={styles.productImagePlaceholder}>
+                      <Text style={styles.productImagePlaceholderText}>{hasTecDocMatch ? 'TD' : 'EAN'}</Text>
+                    </View>
+                  )}
+                  <View style={styles.productIdentity}>
+                    {hasTecDocMatch ? (
+                      <Text style={styles.productBrand}>{line.tecdoc_brand || 'TECDOC'}</Text>
+                    ) : null}
+                    <View style={styles.productCodeRow}>
+                      <Text style={listStyles.sku}>{productCode}</Text>
                       {line.unexpected && (
                         <View style={styles.unexpectedBadge}>
                           <Text style={styles.unexpectedBadgeText}>NEW</Text>
                         </View>
                       )}
                     </View>
-                    <Text style={listStyles.itemName}>{line.item_name}</Text>
+                    <Text style={styles.productName}>{productName}</Text>
+                    {line.upc ? <Text style={styles.productEan}>EAN {line.upc}</Text> : null}
                     {showExpected && !line.unexpected && (
                       <Text style={styles.expectedText}>Expected: {expected}</Text>
                     )}
@@ -358,6 +378,21 @@ const styles = StyleSheet.create({
     minWidth: 48, textAlign: 'center',
   },
   turboCountVariance: { color: colors.copper },
+
+  productImage: {
+    width: 64, height: 64, marginRight: 10, borderWidth: 1,
+    borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: colors.cardBg,
+  },
+  productImagePlaceholder: {
+    width: 64, height: 64, marginRight: 10, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small, backgroundColor: '#eff6ff',
+  },
+  productImagePlaceholderText: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800' },
+  productIdentity: { flex: 1, minWidth: 0 },
+  productCodeRow: { flexDirection: 'row', alignItems: 'center' },
+  productBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800', letterSpacing: 0.4, marginBottom: 2 },
+  productName: { color: colors.textPrimary, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  productEan: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 9, marginTop: 2 },
 
   lineUnexpected: { borderColor: colors.copper, borderLeftWidth: 3, borderLeftColor: colors.copper },
   unexpectedBadge: {

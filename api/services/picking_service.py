@@ -12,6 +12,7 @@ from services.audit_service import write_audit_log
 from services.connector_stub import enrich_order
 from services.events_service import emit_event, get_user_external_id, resolve_source_external_id
 from services.inventory_service import add_inventory
+from services.catalog_media import catalog_image_urls
 
 from constants import (
     BATCH_OPEN, BATCH_IN_PROGRESS, BATCH_COMPLETED, BATCH_CANCELLED,
@@ -627,6 +628,9 @@ def get_next_task(db, batch_id):
                    pt.tote_number, pt.status,
                    b.bin_code, b.bin_barcode, b.aisle, b.row_num, b.level_num,
                    i.sku, i.item_name, i.upc,
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload,
                    so.so_number,
                    tro.to_number,
                    z.zone_name
@@ -634,6 +638,7 @@ def get_next_task(db, batch_id):
             JOIN bins b ON b.bin_id = pt.bin_id
             LEFT JOIN zones z ON z.zone_id = b.zone_id
             JOIN items i ON i.item_id = pt.item_id
+            LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             LEFT JOIN sales_orders so ON so.so_id = pt.so_id
             LEFT JOIN transfer_orders tro ON tro.to_id = pt.to_id
             WHERE pt.batch_id = :bid AND pt.status = :task_pending
@@ -1969,6 +1974,9 @@ def _get_tasks_for_batch(db, batch_id):
                    pt.tote_number, pt.status,
                    b.bin_code, b.bin_barcode, b.aisle, b.row_num, b.level_num,
                    i.sku, i.item_name, i.upc,
+                   d.status AS catalog_status, d.tecdoc_article_id,
+                   d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
+                   d.tecdoc_match_type, d.tecdoc_payload,
                    so.so_number,
                    tro.to_number,
                    z.zone_name
@@ -1976,6 +1984,7 @@ def _get_tasks_for_batch(db, batch_id):
             JOIN bins b ON b.bin_id = pt.bin_id
             LEFT JOIN zones z ON z.zone_id = b.zone_id
             JOIN items i ON i.item_id = pt.item_id
+            LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             LEFT JOIN sales_orders so ON so.so_id = pt.so_id
             LEFT JOIN transfer_orders tro ON tro.to_id = pt.to_id
             WHERE pt.batch_id = :bid
@@ -1989,6 +1998,7 @@ def _get_tasks_for_batch(db, batch_id):
 
 
 def _task_row_to_dict(row):
+    image_urls = catalog_image_urls(getattr(row, "tecdoc_payload", None))
     return {
         "pick_task_id": row.pick_task_id,
         "pick_sequence": row.pick_sequence,
@@ -2001,6 +2011,14 @@ def _task_row_to_dict(row):
         "sku": row.sku,
         "item_name": row.item_name,
         "upc": row.upc,
+        "catalog_status": getattr(row, "catalog_status", None) or "KNOWN",
+        "tecdoc_article_id": getattr(row, "tecdoc_article_id", None),
+        "tecdoc_code": getattr(row, "tecdoc_code", None),
+        "tecdoc_brand": getattr(row, "tecdoc_brand", None),
+        "tecdoc_name": getattr(row, "tecdoc_name", None),
+        "tecdoc_match_type": getattr(row, "tecdoc_match_type", None),
+        "image_url": image_urls[0] if image_urls else None,
+        "images": image_urls,
         "quantity_to_pick": row.quantity_to_pick,
         "tote_number": row.tote_number,
         "so_number": row.so_number,
