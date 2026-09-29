@@ -125,7 +125,9 @@ export default async function handler(request, response) {
       headers: buildUpstreamHeaders(request),
       body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(25_000),
+      // A TecDoc batch runs six lookups concurrently, each with a 45s
+      // upstream read timeout. Allow it to return its real result.
+      signal: AbortSignal.timeout(upstreamUrl.pathname.startsWith('/api/catalog-discovery/') ? 55_000 : 25_000),
     });
 
     copyResponseHeaders(upstreamResponse, response);

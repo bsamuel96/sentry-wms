@@ -15,9 +15,10 @@ import { parseWarehouseHierarchyBarcode } from '../utils/barcodes';
 import PwaStatusBanner from '../components/PwaStatusBanner';
 import Constants from 'expo-constants';
 
-const APP_VERSION = Constants.expoConfig?.version || '1.46.3';
+const APP_VERSION = Constants.expoConfig?.version || '1.47.0';
 
 const FUNCTIONS = [
+  { key: 'catalog-review', page: 'items', label: 'PRODUSE DE VERIFICAT', sub: 'TecDoc și detalii manuale', screen: 'CatalogReview', accent: 'copper' },
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
   { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
@@ -37,6 +38,7 @@ const ACCENT_COLORS = {
 export default function HomeScreen({ navigation }) {
   const { user, warehouseId, logout, switchWarehouse } = useAuth();
   const [allowedFunctions, setAllowedFunctions] = useState([]);
+  const [allowedPages, setAllowedPages] = useState([]);
   const [badges, setBadges] = useState({});
   const [warehouses, setWarehouses] = useState([]);
   const [warehouseCode, setWarehouseCode] = useState('');
@@ -118,6 +120,7 @@ export default function HomeScreen({ navigation }) {
       ]);
 
       setAllowedFunctions(meResp.data.allowed_functions || []);
+      setAllowedPages(meResp.data.allowed_pages || []);
       setRequirePacking(meResp.data.require_packing !== false);
 
       applyDashboardStats(dashResp.data);
@@ -246,7 +249,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   const visibleFunctions = FUNCTIONS.filter(
-    (fn) => allowedFunctions.includes(fn.permission || fn.key)
+    (fn) => fn.page ? (user?.role === 'ADMIN' || allowedPages.includes(fn.page)) : allowedFunctions.includes(fn.permission || fn.key)
   );
 
   const getBadgeCount = (key) => badges[key] || 0;

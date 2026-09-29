@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import LocalCatalogPanel from '../components/LocalCatalogPanel.jsx';
 import { canSearchScannedCodeInTecDoc } from '../utils/catalogMatching.js';
+import { matchPendingCatalog } from '../../../mobile/src/utils/catalogReview.js';
 
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'În așteptare' },
@@ -42,9 +43,41 @@ export default function CatalogMatching() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  const [allProgress, setAllProgress] = useState(null);
+  const [allRunning, setAllRunning] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const stopAll = useRef(false);
   const [error, setError] = useState('');
   const [matchError, setMatchError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => () => { stopAll.current = true; }, []);
+
+  async function bulkMatchAll() {
+    if (bulkLoading) return;
+    stopAll.current = false;
+    setBulkLoading(true); setAllRunning(true); setStopping(false);
+    setAllProgress(null); setBulkResult(null); setError('');
+    const read = async response => {
+      const payload = await response?.json();
+      if (!response?.ok) throw new Error(payload?.error || 'Echivalarea s-a oprit. Reîncarcă lista și reîncearcă.');
+      return payload;
+    };
+    try {
+      const result = await matchPendingCatalog({
+        getIds: async () => (await read(await api.get('/catalog-discovery/queue/pending-ids'))).discovery_ids,
+        matchBatch: async ids => read(await api.post('/catalog-discovery/queue/bulk-match', { discovery_ids: ids })),
+        onProgress: setAllProgress,
+        shouldStop: () => stopAll.current,
+      });
+      setAllProgress(result);
+      setSelectedIds(new Set());
+    } catch (err) {
+      setError(`${err.message} Rezultatele deja salvate rămân. Reîncearcă pentru produsele încă în așteptare.`);
+    } finally {
+      setBulkLoading(false); setAllRunning(false); await loadQueue(undefined, true);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,9 +90,9 @@ export default function CatalogMatching() {
     setBulkResult(null);
   }
 
-  async function loadQueue(signal) {
+  async function loadQueue(signal, preserveError = false) {
     setLoading(true);
-    setError('');
+    if (!preserveError) setError('');
     try {
       const params = new URLSearchParams({ page: String(page), per_page: '25', status });
       if (search.trim()) params.set('q', search.trim());
@@ -313,6 +346,16 @@ export default function CatalogMatching() {
           {bulkLoading ? 'Se echivalează…' : `Echivalează automat după EAN (${selectedIds.size})`}
         </button>
       </div>
+      <div className="filter-bar">
+        <button type="button" className="btn btn-primary" disabled={bulkLoading} onClick={bulkMatchAll}>Echivalează toate în TecDoc</button>
+        <span>Toate produsele în așteptare, din toate paginile, indiferent de filtre. Păstrează pagina deschisă.</span>
+        {allRunning && <button type="button" className="btn" disabled={stopping} onClick={() => { stopAll.current = true; setStopping(true); }}>{stopping ? 'Se oprește după lotul curent…' : 'Oprește după lotul curent'}</button>}
+      </div>
+      {allProgress && <div className="alert alert-info" role="status">
+        <div>{allProgress.processed} / {allProgress.total} verificate{allProgress.stopped ? ' · Oprit' : !allRunning && allProgress.processed === allProgress.total ? ' · Finalizat' : ''}</div>
+        <progress aria-label="Progres echivalare TecDoc" value={allProgress.processed} max={allProgress.total || 1} style={{ width: '100%' }} />
+        <div>{allProgress.matched} echivalate · {allProgress.not_found} fără potrivire · {allProgress.ambiguous} necesită alegere · {allProgress.skipped} omise · {allProgress.failed} erori</div>
+      </div>}
       {success ? (
         <div className="alert alert-success" role="status">
           {success}{' '}

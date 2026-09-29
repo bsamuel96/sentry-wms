@@ -48,6 +48,25 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
+  it('echivalează toate paginile și afișează progresul după fiecare lot', async () => {
+    const ids = [41, 42, 43, 44, 45, 46, 47];
+    get.mockImplementation(async path => jsonResponse(path.endsWith('/pending-ids') ? { discovery_ids: ids } : page()));
+    let finishSecond;
+    post.mockImplementation(async (_, { discovery_ids }) => {
+      if (discovery_ids.includes(47)) await new Promise(resolve => { finishSecond = resolve; });
+      return jsonResponse({ results: discovery_ids.map(discovery_id => ({ discovery_id, status: 'matched' })) });
+    });
+    render(<CatalogMatching />);
+    await screen.findByRole('checkbox');
+    fireEvent.click(screen.getByRole('button', { name: 'Echivalează toate în TecDoc' }));
+    expect(await screen.findByText('6 / 7 verificate')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '6');
+    await waitFor(() => expect(finishSecond).toBeTypeOf('function'));
+    finishSecond();
+    expect(await screen.findByText('7 / 7 verificate · Finalizat')).toBeInTheDocument();
+    expect(post.mock.calls.map(([, body]) => body.discovery_ids)).toEqual([ids.slice(0, 6), [47]]);
+  });
+
   it('trimite selecția EAN într-o singură operație bulk', async () => {
     get.mockResolvedValueOnce(jsonResponse(page())).mockResolvedValueOnce(jsonResponse(page([])));
     post.mockResolvedValueOnce(jsonResponse({

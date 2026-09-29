@@ -184,6 +184,24 @@ def queue():
     })
 
 
+@catalog_discovery_bp.route("/queue/pending-ids", methods=["GET"])
+@require_auth
+@require_admin_or_page_permission("items")
+@with_db
+def queue_pending_ids():
+    """Snapshot the work before matching removes rows from the pending queue.
+
+    Offset pagination while processing would silently skip products. Clients
+    process these IDs in bounded batches; rows reviewed meanwhile are skipped
+    by the bulk endpoint under its existing row lock.
+    """
+    rows = g.db.execute(text("""
+        SELECT discovery_id FROM item_catalog_discoveries
+        WHERE status = 'PENDING' ORDER BY discovery_id
+    """)).fetchall()
+    return jsonify({"discovery_ids": [row.discovery_id for row in rows]})
+
+
 @catalog_discovery_bp.route("/queue/<int:discovery_id>/matches", methods=["GET"])
 @require_auth
 @require_admin_or_page_permission("items")
