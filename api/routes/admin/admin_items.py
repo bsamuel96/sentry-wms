@@ -58,7 +58,7 @@ def list_items():
         NOT EXISTS (
             SELECT 1 FROM item_catalog_discoveries hidden_discovery
             WHERE hidden_discovery.item_id = i.item_id
-              AND hidden_discovery.status <> 'MATCHED'
+              AND hidden_discovery.status NOT IN ('MATCHED', 'MANUAL')
         )
     """]
     params = {}
@@ -92,14 +92,14 @@ def list_items():
     rows = g.db.execute(
         text(f"""
             SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.weight_lbs,
-                   i.default_bin_id, i.is_active, i.created_at,
+                   i.default_bin_id, i.is_active, i.created_at, i.local_pricing,
                    b.bin_code AS default_bin_code,
                    d.status AS catalog_status, d.tecdoc_article_id,
                    d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
                    d.tecdoc_match_type, d.tecdoc_payload
             FROM items i
             LEFT JOIN item_catalog_discoveries d
-              ON d.item_id = i.item_id AND d.status = 'MATCHED'
+              ON d.item_id = i.item_id AND d.status IN ('MATCHED', 'MANUAL')
             -- An item can carry more than one priority-1 preferred_bins
             -- row (the data allows it), and a plain join fans the item
             -- out into duplicate result rows. Collapse to one
@@ -141,6 +141,7 @@ def _serialize_admin_item(row):
         "default_bin_code": row.default_bin_code,
         "is_active": row.is_active,
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "local_pricing": row.local_pricing,
         "catalog_status": row.catalog_status,
         "tecdoc_article_id": row.tecdoc_article_id,
         "tecdoc_code": row.tecdoc_code,
@@ -163,13 +164,13 @@ def get_item(item_id):
                    i.mpn, i.barcode_aliases, i.category, i.weight_lbs,
                    i.length_in, i.width_in, i.height_in, i.default_bin_id,
                    i.reorder_point, i.reorder_qty, i.is_lot_tracked,
-                   i.is_serial_tracked, i.is_active, i.created_at, i.updated_at,
+                   i.is_serial_tracked, i.is_active, i.created_at, i.updated_at, i.local_pricing,
                    d.status AS catalog_status, d.tecdoc_article_id,
                    d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
                    d.tecdoc_match_type, d.tecdoc_payload
             FROM items i
             LEFT JOIN item_catalog_discoveries d
-              ON d.item_id = i.item_id AND d.status = 'MATCHED'
+              ON d.item_id = i.item_id AND d.status IN ('MATCHED', 'MANUAL')
             WHERE i.item_id = :iid
         """),
         {"iid": item_id},
@@ -210,6 +211,7 @@ def get_item(item_id):
             "is_serial_tracked": item.is_serial_tracked, "is_active": item.is_active,
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            "local_pricing": item.local_pricing,
             "catalog_status": item.catalog_status,
             "tecdoc_article_id": item.tecdoc_article_id,
             "tecdoc_code": item.tecdoc_code,

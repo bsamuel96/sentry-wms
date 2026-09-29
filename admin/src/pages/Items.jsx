@@ -5,6 +5,7 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import './Items.css';
+import LocalCatalogPanel from '../components/LocalCatalogPanel.jsx';
 
 const FILTER_OPTIONS = [
   { label: 'Active', value: 'active' },
@@ -29,6 +30,7 @@ function ProductIdentity({ item }) {
         <strong>{item.tecdoc_name || item.item_name}</strong>
         <span className="mono">{item.tecdoc_code || item.mpn || item.sku}</span>
         {item.catalog_status === 'MATCHED' ? <span className="items-tecdoc-pill">TecDoc</span> : null}
+        {item.catalog_status === 'MANUAL' ? <span className="items-tecdoc-pill">Identificat manual</span> : null}
       </div>
     </div>
   );
@@ -174,6 +176,7 @@ export default function Items() {
     { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} />, csvValue: (r) => r.tecdoc_name || r.item_name },
     { key: 'upc', label: 'EAN', mono: true, render: (r) => r.upc || '-' },
     { key: 'default_bin_code', label: 'Locație', mono: true, render: (r) => r.default_bin_code || '\u2013' },
+    { key: 'local_price', label: 'Preț Local cu TVA', render: (r) => r.local_pricing?.price ? `${Number(r.local_pricing.price).toFixed(2)} RON` : 'Fără preț' },
     { key: 'category', label: 'Categorie', render: (r) => r.category || '-' },
     { key: 'is_active', label: 'Stare', render: (r) => r.is_active ? 'Activ' : 'Arhivat' },
     { key: 'actions', label: '', render: (r) => (
@@ -211,14 +214,14 @@ export default function Items() {
       <DataTable rowKey="item_id" columns={columns} data={items} pagination={pagination} onPageChange={setPage} onRowClick={viewItem} />
 
       {detail && !showModal && (
-        <Modal title={detail.item_name || detail.sku} onClose={() => setDetail(null)}
+        <Modal size="wide" title={detail.item_name || detail.sku} onClose={() => setDetail(null)}
           footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}
         >
           {detail.catalog_status === 'MATCHED' || detail.tecdoc_code ? (
             <div className="items-detail-product">
               <ProductImage item={detail} large />
               <div>
-                <span className="items-product-brand">{detail.tecdoc_brand || 'TECDOC'}</span>
+                <span className="items-product-brand">{detail.tecdoc_brand || (detail.catalog_status === 'MANUAL' ? 'MANUAL' : 'TECDOC')}</span>
                 <h3>{detail.tecdoc_name || detail.item_name}</h3>
                 <div className="mono">{detail.tecdoc_code || detail.mpn}</div>
               </div>
@@ -232,6 +235,7 @@ export default function Items() {
             <span className="detail-label">Weight</span><span>{(detail.weight_lbs || detail.weight) ? `${detail.weight_lbs || detail.weight} lb` : '-'}</span>
             <span className="detail-label">Active</span><span>{detail.is_active ? 'Yes' : 'No'}</span>
           </div>
+          <LocalCatalogPanel key={detail.id} itemId={detail.id} onSaved={() => loadItems()} />
           {detail.preferred_bins && detail.preferred_bins.length > 0 && (
             <>
               <div className="section-title">Preferred Bins</div>

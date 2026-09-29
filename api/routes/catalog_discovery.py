@@ -132,7 +132,7 @@ def queue():
     per_page = min(100, max(1, request.args.get("per_page", 25, type=int)))
     status = str(request.args.get("status") or "PENDING").strip().upper()
     query = str(request.args.get("q") or "").strip()
-    if status not in ("PENDING", "MATCHED", "IGNORED", "ALL"):
+    if status not in ("PENDING", "MATCHED", "MANUAL", "IGNORED", "ALL"):
         return jsonify({"error": "Stare invalidă."}), 422
     conditions = []
     params = {}

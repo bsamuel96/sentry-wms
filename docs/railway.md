@@ -34,3 +34,8 @@ take an advisory lock, detect the existing schema and skip initialization.
 
 The remaining application secrets and production settings follow `.env.example`.
 Never import the placeholder values from that file into Railway.
+
+The pre-deploy also applies additive migrations 083 (scanned-item discovery) and
+084 (Local catalogue pricing and manual identification) on existing databases,
+inside the same transaction and advisory lock. Deployments must retain the
+`python api/bootstrap_railway.py` pre-deploy command.

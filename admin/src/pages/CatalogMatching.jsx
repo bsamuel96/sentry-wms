@@ -3,16 +3,19 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
+import LocalCatalogPanel from '../components/LocalCatalogPanel.jsx';
 import { canSearchScannedCodeInTecDoc } from '../utils/catalogMatching.js';
 
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'În așteptare' },
   { value: 'MATCHED', label: 'Echivalate' },
+  { value: 'MANUAL', label: 'Identificate manual' },
   { value: 'IGNORED', label: 'Ignorate' },
   { value: 'ALL', label: 'Toate' },
 ];
 
 function statusLabel(status) {
+  if (status === 'MANUAL') return 'Identificat manual';
   if (status === 'MATCHED') return 'Echivalat';
   if (status === 'IGNORED') return 'Ignorat';
   return 'În așteptare';
@@ -359,7 +362,7 @@ export default function CatalogMatching() {
             <span className="detail-label">Stoc</span><span>{selected.quantity_on_hand} buc.</span>
             <span className="detail-label">Locații</span><span>{(selected.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—'}</span>
             <span className="detail-label">Stare</span><span>{statusLabel(selected.status)}</span>
-            {selected.tecdoc_code ? <><span className="detail-label">TecDoc</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
+            {selected.tecdoc_code ? <><span className="detail-label">{selected.status === 'MANUAL' ? 'Identitate manuală' : 'TecDoc'}</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
           </div>
 
           {selected.status === 'PENDING' ? (
@@ -393,6 +396,7 @@ export default function CatalogMatching() {
               </div>
             </>
           ) : null}
+          <LocalCatalogPanel key={selected.item_id} itemId={selected.item_id} onSaved={(saved) => { if (saved?.status) setSelected(current => ({ ...current, status: saved.status, item_name: saved.catalog.name, tecdoc_code: saved.catalog.code, tecdoc_brand: saved.catalog.brand, tecdoc_name: saved.catalog.name })); loadQueue(); }} />
         </Modal>
       ) : null}
     </div>

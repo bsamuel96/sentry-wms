@@ -73,6 +73,7 @@ CREATE TABLE items (
     description VARCHAR(1000),
     upc VARCHAR(50),                       -- primary barcode
     mpn VARCHAR(64),                        -- manufacturer part number (mig 079)
+    local_pricing JSONB NOT NULL DEFAULT '{}'::jsonb,
     barcode_aliases JSONB,                 -- array of alternate barcodes
     category VARCHAR(100),
     weight_lbs DECIMAL(10,4),
@@ -128,7 +129,7 @@ CREATE TABLE item_catalog_discoveries (
     item_id INT NOT NULL UNIQUE REFERENCES items(item_id) ON DELETE CASCADE,
     scanned_ean VARCHAR(50) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-        CHECK (status IN ('PENDING', 'MATCHED', 'IGNORED')),
+        CHECK (status IN ('PENDING', 'MATCHED', 'MANUAL', 'IGNORED')),
     tecdoc_article_id VARCHAR(100),
     tecdoc_code VARCHAR(100),
     tecdoc_brand VARCHAR(200),

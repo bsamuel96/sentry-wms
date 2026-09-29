@@ -19,6 +19,9 @@ SCHEMA_PATH = REPO_ROOT / "db" / "schema.sql"
 MOBILE_STOCK_ENTRY_MIGRATION_PATH = (
     REPO_ROOT / "db" / "migrations" / "083_mobile_stock_entry_catalog_queue.sql"
 )
+LOCAL_CATALOG_PRICING_MIGRATION_PATH = (
+    REPO_ROOT / "db" / "migrations" / "084_local_catalog_pricing.sql"
+)
 BOOTSTRAP_LOCK_ID = 7_493_367_791
 
 
@@ -70,6 +73,13 @@ def _ensure_mobile_stock_entry_schema(cursor) -> None:
             f"Mobile stock-entry migration is missing: {MOBILE_STOCK_ENTRY_MIGRATION_PATH}"
         )
     cursor.execute(MOBILE_STOCK_ENTRY_MIGRATION_PATH.read_text(encoding="utf-8"))
+
+
+def _ensure_local_catalog_pricing_schema(cursor) -> None:
+    """Install Local pricing and manual identities before serving the new API."""
+    if not LOCAL_CATALOG_PRICING_MIGRATION_PATH.is_file():
+        raise RuntimeError("Local catalogue pricing migration is missing")
+    cursor.execute(LOCAL_CATALOG_PRICING_MIGRATION_PATH.read_text(encoding="utf-8"))
 
 
 def _seed_minimal_install(cursor, admin_password: str) -> None:
@@ -188,6 +198,7 @@ def main() -> None:
                 if _schema_is_initialized(cursor):
                     _ensure_runtime_indexes(cursor)
                     _ensure_mobile_stock_entry_schema(cursor)
+                    _ensure_local_catalog_pricing_schema(cursor)
                     print(
                         "Sentry WMS database is already initialized; additive schema and "
                         "runtime indexes verified."
@@ -198,6 +209,7 @@ def main() -> None:
                 _seed_minimal_install(cursor, admin_password)
                 _ensure_runtime_indexes(cursor)
                 _ensure_mobile_stock_entry_schema(cursor)
+                _ensure_local_catalog_pricing_schema(cursor)
                 print("Sentry WMS schema and minimal admin setup initialized.")
     finally:
         connection.close()
