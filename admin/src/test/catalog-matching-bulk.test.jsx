@@ -171,7 +171,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     expect(window.confirm).not.toHaveBeenCalledWith(expect.stringContaining('Confirmi că produsul fizic'));
   });
 
-  it('caută EAN-ul în Connex din fereastra produsului și salvează rezultatul unic', async () => {
+  it('echivalează individual un rând prin Connex și salvează rezultatul unic', async () => {
     let queueLoads = 0;
     get.mockImplementation(async path => {
       if (path.includes('/connex-matches')) return jsonResponse({
@@ -186,8 +186,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     post.mockResolvedValueOnce(jsonResponse({ ok: true, item_id: 91, status: 'MANUAL', source: 'connex' }));
 
     render(<CatalogMatching />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Caută în Connex după EAN' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Echivalează Connex' }));
 
     await waitFor(() => expect(get).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-matches'));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-match', {

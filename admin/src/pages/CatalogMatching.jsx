@@ -169,6 +169,17 @@ export default function CatalogMatching() {
     if (row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) findMatches(row, '');
   }
 
+  function openConnexReview(row) {
+    setSelected(row);
+    setReference('');
+    setMatches([]);
+    setMatchError('');
+    setSearchedBy('');
+    setConnexMatches([]);
+    setConnexError('');
+    findConnexMatches(row);
+  }
+
   async function findConnexMatches(row = selected) {
     if (!row || connexLoading) return;
     setConnexLoading(true);
@@ -411,12 +422,22 @@ export default function CatalogMatching() {
         <button type="button" className="btn btn-primary btn-sm" onClick={(event) => { event.stopPropagation(); openReview(row); }}>
           {row.status === 'PENDING' ? 'Compară TecDoc' : 'Detalii'}
         </button>
+        {row.status === 'PENDING' ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!canSearchScannedCodeInTecDoc(row.ean) || connexLoading || Boolean(connexSavingId)}
+            onClick={(event) => { event.stopPropagation(); openConnexReview(row); }}
+          >
+            {connexLoading && selected?.discovery_id === row.discovery_id ? 'Se caută în Connex…' : 'Echivalează Connex'}
+          </button>
+        ) : null}
         <button type="button" className="btn btn-danger btn-sm" disabled={Boolean(savingId)} onClick={(event) => { event.stopPropagation(); deleteDiscovery(row); }}>
           {savingId === `delete:${row.discovery_id}` ? 'Se șterge…' : 'Șterge'}
         </button>
       </div>
     ) },
-  ], [bulkLoading, connexBulkLoading, savingId, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [bulkLoading, connexBulkLoading, connexLoading, connexSavingId, savingId, selected, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -481,7 +502,7 @@ export default function CatalogMatching() {
 
       {selected ? (
         <Modal
-          title={`Echivalare TecDoc · ${selected.ean}`}
+          title={`Echivalare produs · ${selected.ean}`}
           onClose={() => setSelected(null)}
           size="wide"
           footer={selected.status === 'PENDING' ? (
