@@ -56,6 +56,43 @@ export function OrderListSkeleton({ count = 5 }) {
   );
 }
 
+export function CatalogListSkeleton({ count = 4 }) {
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel="Se încarcă produsele de verificat">
+      {Array.from({ length: count }).map((_, index) => (
+        <View key={index} style={styles.catalogCard}>
+          <SkeletonLine width="72%" height={18} />
+          <SkeletonLine width="88%" height={14} style={styles.lineGap} />
+          <SkeletonLine width="64%" height={13} style={styles.lineGapSmall} />
+          <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function CatalogDetailsSkeleton() {
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel="Se încarcă detaliile produsului">
+      <View style={styles.catalogCard}>
+        <SkeletonLine width="44%" height={18} />
+        <SkeletonLine width="100%" height={48} style={styles.lineGap} />
+        <SkeletonLine width="100%" height={48} style={styles.lineGap} />
+      </View>
+      <View style={styles.catalogCard}>
+        <SkeletonLine width="38%" height={18} />
+        {Array.from({ length: 5 }).map((_, index) => (
+          <View key={index} style={styles.catalogField}>
+            <SkeletonLine width="42%" height={12} />
+            <SkeletonLine width="100%" height={48} style={styles.lineGapSmall} />
+          </View>
+        ))}
+        <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
+      </View>
+    </View>
+  );
+}
+
 export function BusySkeleton({ title = 'Se procesează...', detail = 'Păstrează aplicația deschisă.' }) {
   return (
     <View style={styles.busyScreen} accessibilityRole="progressbar" accessibilityLabel={title}>
@@ -90,6 +127,12 @@ const styles = StyleSheet.create({
   },
   orderMain: { flex: 1, paddingRight: 16 },
   orderAction: { borderRadius: 18 },
+  catalogCard: {
+    padding: 14, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: radii.card, backgroundColor: colors.cardBg,
+  },
+  catalogAction: { marginTop: 14, borderRadius: radii.button },
+  catalogField: { marginTop: 14 },
   busyScreen: {
     flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.background,

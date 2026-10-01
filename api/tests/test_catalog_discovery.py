@@ -1,6 +1,8 @@
 """Discovery proxy tests use only the dedicated fixture database and mocked AutoSav."""
+from io import BytesIO
 import uuid
 from types import SimpleNamespace
+from urllib.parse import urlparse
 import requests
 from sqlalchemy import text
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
@@ -328,6 +330,39 @@ def test_bulk_connex_ean_match_applies_only_one_exact_candidate(client, auth_hea
         "SELECT status FROM item_catalog_discoveries WHERE item_id=%s",
         (ambiguous_item_id,),
     ) == [("PENDING",)]
+
+
+def test_manual_catalog_photo_upload_is_persistent_and_saveable(client, auth_headers):
+    discovery_id, item_id = create_discovery()
+    uploaded = client.post(
+        f"/api/admin/items/{item_id}/catalog-images",
+        headers=auth_headers,
+        data={"file": (BytesIO(b"\xff\xd8\xff\xe0product-photo"), "product.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert uploaded.status_code == 201, uploaded.get_data(as_text=True)
+    image_url = uploaded.get_json()["image_url"]
+    assert image_url.startswith("https://")
+    image_path = urlparse(image_url).path
+    served = client.get(image_path)
+    assert served.status_code == 200
+    assert served.mimetype == "image/jpeg"
+    assert served.data == b"\xff\xd8\xff\xe0product-photo"
+
+    saved = client.put(
+        f"/api/admin/items/{item_id}/local-catalog",
+        headers=auth_headers,
+        json={
+            "name": "Filtru", "brand": "Marca", "code": "ABC",
+            "eans": ["4006381333931"], "images": [image_url], "references": [],
+        },
+    )
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    assert saved.get_json()["catalog"]["images"] == [image_url]
+    assert query(
+        "SELECT file_size FROM catalog_product_images WHERE item_id=%s",
+        (item_id,),
+    ) == [(len(b"\xff\xd8\xff\xe0product-photo"),)]
 
 
 def test_delete_unused_scanned_product_removes_stock_and_keeps_audit(client, auth_headers):

@@ -77,14 +77,15 @@ const DEFAULT_TIMEOUT_MS = 10000;
 
 async function request(method, path, body, requestOptions = {}) {
   const token = await getAuthItem('jwt_token');
-  const headers = { 'Content-Type': 'application/json' };
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
   const options = { method, headers };
   if (body && method !== 'GET') {
-    options.body = JSON.stringify(body);
+    options.body = isFormData ? body : JSON.stringify(body);
   }
 
   // Per-call timeout so a heavy request (e.g. wave-create over many orders)

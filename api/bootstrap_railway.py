@@ -22,6 +22,9 @@ MOBILE_STOCK_ENTRY_MIGRATION_PATH = (
 LOCAL_CATALOG_PRICING_MIGRATION_PATH = (
     REPO_ROOT / "db" / "migrations" / "084_local_catalog_pricing.sql"
 )
+CATALOG_PRODUCT_IMAGES_MIGRATION_PATH = (
+    REPO_ROOT / "db" / "migrations" / "085_catalog_product_images.sql"
+)
 BOOTSTRAP_LOCK_ID = 7_493_367_791
 
 
@@ -80,6 +83,13 @@ def _ensure_local_catalog_pricing_schema(cursor) -> None:
     if not LOCAL_CATALOG_PRICING_MIGRATION_PATH.is_file():
         raise RuntimeError("Local catalogue pricing migration is missing")
     cursor.execute(LOCAL_CATALOG_PRICING_MIGRATION_PATH.read_text(encoding="utf-8"))
+
+
+def _ensure_catalog_product_images_schema(cursor) -> None:
+    """Install persistent manual-match product photos before API startup."""
+    if not CATALOG_PRODUCT_IMAGES_MIGRATION_PATH.is_file():
+        raise RuntimeError("Catalogue product image migration is missing")
+    cursor.execute(CATALOG_PRODUCT_IMAGES_MIGRATION_PATH.read_text(encoding="utf-8"))
 
 
 def _seed_minimal_install(cursor, admin_password: str) -> None:
@@ -199,6 +209,7 @@ def main() -> None:
                     _ensure_runtime_indexes(cursor)
                     _ensure_mobile_stock_entry_schema(cursor)
                     _ensure_local_catalog_pricing_schema(cursor)
+                    _ensure_catalog_product_images_schema(cursor)
                     print(
                         "Sentry WMS database is already initialized; additive schema and "
                         "runtime indexes verified."
@@ -210,6 +221,7 @@ def main() -> None:
                 _ensure_runtime_indexes(cursor)
                 _ensure_mobile_stock_entry_schema(cursor)
                 _ensure_local_catalog_pricing_schema(cursor)
+                _ensure_catalog_product_images_schema(cursor)
                 print("Sentry WMS schema and minimal admin setup initialized.")
     finally:
         connection.close()

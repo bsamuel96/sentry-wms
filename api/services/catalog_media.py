@@ -3,6 +3,17 @@ import json
 from urllib.parse import urlparse
 
 
+def catalog_image_mime(data):
+    """Identify the browser-native image set from trusted file signatures."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def _safe_image_url(value):
     text = str(value or "").strip()
     if not text:

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, ScrollView, View } from 'react-native';
+import { AppState, ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScreenHeader from '../components/ScreenHeader';
@@ -7,6 +7,7 @@ import client from '../api/client';
 import { screenStyles } from '../theme/styles';
 import { CATALOG_TIMEOUT, matchPendingCatalog } from '../utils/catalogReview';
 import { CatalogButton, catalogStyles as styles } from '../components/CatalogForm';
+import { CatalogListSkeleton } from '../components/LoadingSkeleton';
 
 export default function CatalogReviewScreen({ navigation }) {
   const [rows, setRows] = useState([]);
@@ -97,7 +98,7 @@ export default function CatalogReviewScreen({ navigation }) {
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <CatalogButton secondary title="Reîncarcă lista" disabled={loading || running} onPress={() => { setError(''); load(); }} />
         <Text>{pagination.total} produse · Pagina {page} / {pagination.pages}</Text>
-        {loading ? <ActivityIndicator /> : rows.length === 0 ? <Text style={styles.help}>Niciun produs în această listă.</Text> : rows.map(row => (
+        {loading ? <CatalogListSkeleton count={4} /> : rows.length === 0 ? <Text style={styles.help}>Niciun produs în această listă.</Text> : rows.map(row => (
           <View key={row.discovery_id} style={styles.card}>
             <Text style={styles.title}>{row.item_name}</Text>
             <Text>EAN: {row.ean} · SKU: {row.sku}</Text>

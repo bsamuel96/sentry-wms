@@ -1,11 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Text from '../components/LocalizedText';
 import ScreenHeader from '../components/ScreenHeader';
 import { CatalogButton, CatalogField, catalogStyles as styles } from '../components/CatalogForm';
 import { screenStyles } from '../theme/styles';
 import client from '../api/client';
 import { catalogToForm, formToCatalog, CATALOG_TIMEOUT } from '../utils/catalogReview';
+import { CatalogDetailsSkeleton } from '../components/LoadingSkeleton';
+
+const MAX_PRODUCT_IMAGE_BYTES = 4 * 1024 * 1024;
+
+function imageUrls(value = '') {
+  return [...new Set(String(value).split(/\r?\n/).map(row => row.trim()).filter(Boolean))];
+}
 
 export default function CatalogDetailsScreen({ navigation, route }) {
   const { discovery } = route.params;
@@ -32,6 +40,13 @@ export default function CatalogDetailsScreen({ navigation, route }) {
   function update(key, value) { setForm(current => ({ ...current, [key]: value })); }
   function updateReference(index, key, value) {
     setForm(current => ({ ...current, references: current.references.map((row, i) => i === index ? { ...row, [key]: value } : row) }));
+  }
+
+  function removeImage(imageUrl) {
+    setForm(current => ({
+      ...current,
+      images: imageUrls(current.images).filter(value => value !== imageUrl).join('\n'),
+    }));
   }
 
   async function perform(work) {
@@ -67,12 +82,56 @@ export default function CatalogDetailsScreen({ navigation, route }) {
     });
   }
 
+  async function pickProductImage(source) {
+    if (!form || action.current) return;
+    setError('');
+    try {
+      const permission = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error(source === 'camera'
+          ? 'Permite accesul la cameră pentru a fotografia produsul.'
+          : 'Permite accesul la fotografii pentru a alege imaginea produsului.');
+      }
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.8 });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      if (Number(asset.fileSize || 0) > MAX_PRODUCT_IMAGE_BYTES) {
+        throw new Error('Fotografia poate avea maximum 4 MB.');
+      }
+      if (imageUrls(form.images).length >= 10) {
+        throw new Error('Produsul poate avea maximum 10 imagini.');
+      }
+      const extension = asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg';
+      const fileName = asset.fileName || `produs-${discovery.item_id}-${Date.now()}.${extension}`;
+      const body = new FormData();
+      if (Platform.OS === 'web' && asset.file) body.append('file', asset.file, fileName);
+      else body.append('file', { uri: asset.uri, name: fileName, type: asset.mimeType || 'image/jpeg' });
+      await perform(async () => {
+        const { data } = await client.post(
+          `/api/admin/items/${discovery.item_id}/catalog-images`,
+          body,
+          { timeout: 30_000 },
+        );
+        setForm(current => ({
+          ...current,
+          images: [...imageUrls(current.images), data.image_url].filter((value, index, values) => values.indexOf(value) === index).join('\n'),
+        }));
+      });
+    } catch (err) {
+      setError(err.message || 'Fotografia produsului nu a putut fi încărcată.');
+    }
+  }
+
   return <KeyboardAvoidingView style={screenStyles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScreenHeader title="Detalii produs" onBack={() => { if (!busy) navigation.goBack(); }} />
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       <View style={styles.card}><Text style={styles.title}>{discovery.item_name}</Text><Text>EAN scanat: {discovery.ean}</Text><Text>SKU: {discovery.sku}</Text></View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {!form ? error ? <CatalogButton title="Reîncearcă încărcarea" onPress={() => { setError(''); setReload(value => value + 1); }} /> : <ActivityIndicator /> : <>
+      {!form ? error ? <CatalogButton title="Reîncearcă încărcarea" onPress={() => { setError(''); setReload(value => value + 1); }} /> : <CatalogDetailsSkeleton /> : <>
         {status === 'MATCHED' ? <Text style={styles.help}>Produsul a fost deja echivalat în TecDoc. Reîncarcă lista pentru identitatea actualizată.</Text> : <>
           {status === 'PENDING' && <View style={styles.card}>
             <Text style={styles.title}>Caută în TecDoc</Text>
@@ -95,7 +154,18 @@ export default function CatalogDetailsScreen({ navigation, route }) {
             <CatalogField label="Categorie" value={form.category} maxLength={100} editable={!busy} onChangeText={value => update('category', value)} />
             <CatalogField label="Descriere" value={form.description} maxLength={1000} editable={!busy} onChangeText={value => update('description', value)} multiline />
             <CatalogField label="Coduri EAN — câte unul pe linie (maximum 50)" value={form.eans} editable={!busy} onChangeText={value => update('eans', value)} multiline autoCapitalize="none" />
-            <CatalogField label="Imagini — URL HTTPS pe linie (maximum 10)" value={form.images} editable={!busy} onChangeText={value => update('images', value)} multiline autoCapitalize="none" autoCorrect={false} />
+            <Text style={styles.label}>Fotografii produs (maximum 10)</Text>
+            <View style={styles.imageActions}>
+              <CatalogButton secondary title="Cameră" disabled={busy || imageUrls(form.images).length >= 10} onPress={() => pickProductImage('camera')} />
+              <CatalogButton secondary title="Upload" disabled={busy || imageUrls(form.images).length >= 10} onPress={() => pickProductImage('library')} />
+            </View>
+            {imageUrls(form.images).length ? <View style={styles.imageGrid}>
+              {imageUrls(form.images).map((imageUrl, index) => <View key={imageUrl} style={styles.imageCard}>
+                <Image source={{ uri: imageUrl }} accessibilityLabel={`Imagine produs ${index + 1}`} style={styles.productImage} resizeMode="contain" />
+                <CatalogButton secondary title={`Șterge imaginea ${index + 1}`} disabled={busy} onPress={() => removeImage(imageUrl)} />
+              </View>)}
+            </View> : <Text style={styles.help}>Fotografiază produsul sau alege o imagine din telefon.</Text>}
+            <CatalogField label="Alte imagini — URL HTTPS pe linie" value={form.images} editable={!busy} onChangeText={value => update('images', value)} multiline autoCapitalize="none" autoCorrect={false} />
             <Text style={styles.label}>Referințe OE / echivalențe</Text>
             {form.references.map((row, index) => <View key={index} style={styles.card}>
               <CatalogField label={`Referința ${index + 1}: cod *`} value={row.code} maxLength={200} editable={!busy} onChangeText={value => updateReference(index, 'code', value)} />

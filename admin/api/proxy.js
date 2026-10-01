@@ -1,5 +1,9 @@
 /* global Buffer, process */
 
+// Preserve multipart image uploads byte-for-byte. JSON requests are read from
+// the same raw stream and forwarded with their original content type.
+export const config = { api: { bodyParser: false } };
+
 const REQUEST_HEADERS_TO_DROP = new Set([
   'connection',
   'content-length',

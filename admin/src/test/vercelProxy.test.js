@@ -1,9 +1,14 @@
 /* global process */
 
+/* global Buffer */
+
 import { afterEach, describe, expect, it } from 'vitest';
+import { Readable } from 'node:stream';
 
 import {
   buildUpstreamUrl,
+  config,
+  getRequestBody,
   getUpstreamBaseUrl,
 } from '../../api/proxy.js';
 
@@ -18,6 +23,14 @@ afterEach(() => {
 });
 
 describe('Vercel Sentry API proxy', () => {
+  it('keeps multipart uploads as raw bytes', async () => {
+    expect(config.api.bodyParser).toBe(false);
+    const request = Readable.from([Buffer.from('photo-bytes')]);
+    request.method = 'POST';
+    request.body = undefined;
+    expect((await getRequestBody(request)).toString()).toBe('photo-bytes');
+  });
+
   it('keeps the API path and query string on the configured upstream', () => {
     process.env.SENTRY_API_URL = 'https://sentry-api.example.com/';
 

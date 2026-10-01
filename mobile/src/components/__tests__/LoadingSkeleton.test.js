@@ -18,4 +18,12 @@ describe('mobile skeleton geometry', () => {
     expect(source).toMatch(/width=\{92\} height=\{36\}/);
     expect(source).toMatch(/orderAction: \{ borderRadius: 18 \}/);
   });
+
+  it('matches catalogue product cards and manual detail fields', () => {
+    expect(source).toMatch(/export function CatalogListSkeleton/);
+    expect(source).toMatch(/export function CatalogDetailsSkeleton/);
+    expect(source).toMatch(/catalogCard/);
+    expect(source).toMatch(/catalogField/);
+    expect(source).toMatch(/height=\{48\}/);
+  });
 });

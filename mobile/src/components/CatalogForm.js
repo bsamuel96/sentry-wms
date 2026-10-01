@@ -24,6 +24,10 @@ export const catalogStyles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 8, backgroundColor: colors.inputBg, color: colors.textPrimary, padding: 12, fontSize: 16, minHeight: 48 },
   multiline: { minHeight: 90, textAlignVertical: 'top' },
   button: { paddingHorizontal: 12 },
+  imageActions: { flexDirection: 'row', gap: 8 },
+  imageGrid: { gap: 10 },
+  imageCard: { gap: 8, padding: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, backgroundColor: colors.background },
+  productImage: { width: '100%', height: 220, borderRadius: 8, backgroundColor: colors.cardBg },
   track: { height: 10, borderRadius: 5, backgroundColor: colors.cardBorder, overflow: 'hidden' },
   fill: { height: 10, backgroundColor: colors.accentRed },
 });

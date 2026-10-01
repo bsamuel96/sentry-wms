@@ -1,4 +1,4 @@
-# Product review (1.47.0)
+# Product review (1.48.0)
 
 Open **Produse de verificat** from the APK home screen. The menu is available
 to administrators and users granted the **items** page permission in Sentry.
@@ -6,8 +6,10 @@ Pending products, including unsuccessful or ambiguous TecDoc lookups, remain
 in this list. Search by scanned EAN, SKU or product name.
 
 Open a product to retry TecDoc by EAN or manufacturer/OE reference, or enter
-its name, brand, manufacturer code, category, description, EANs, HTTPS image
-URLs and OE/equivalent references manually. A saved product moves to
+its name, brand, manufacturer code, category, description, EANs, product
+photos and OE/equivalent references manually. Product photos can be taken with
+the camera or chosen from the device, are stored by Sentry, and can be removed
+before saving. A saved product moves to
 **Completate manual**, where its details can be edited again. Manual entries
 do not invent TecDoc article IDs and are excluded from automatic matching.
 Local prices continue to be managed in Sentry Web.

@@ -1,15 +1,21 @@
 """Sentry-owned Local catalogue and Connex reference pricing."""
+from io import BytesIO
 import json
 
-from flask import g, jsonify, request
+from flask import g, jsonify, request, send_file, url_for
 from sqlalchemy import text
+from werkzeug.utils import secure_filename
 
 from middleware.auth_middleware import require_auth, require_admin_or_page_permission
 from middleware.db import with_db
 from routes.admin import admin_bp
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
+from services.catalog_media import catalog_image_mime
 from services.local_catalog import update_pricing, validate_catalog
 from services.audit_service import write_audit_log
+
+
+_CATALOG_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
 
 def _item(item_id, lock=False):
@@ -50,6 +56,79 @@ def get_local_catalog(item_id):
     if not item:
         return jsonify({'error': 'Produsul nu există.'}), 404
     return jsonify(_serialize(item))
+
+
+@admin_bp.route('/items/<int:item_id>/catalog-images', methods=['POST'])
+@require_auth
+@require_admin_or_page_permission('items')
+@with_db
+def upload_catalog_image(item_id):
+    """Persist one product photo and return its immutable HTTPS URL."""
+    item = _item(item_id)
+    if not item:
+        return jsonify({'error': 'Produsul nu există.'}), 404
+    upload = request.files.get('file')
+    if not upload:
+        return jsonify({'error': 'Alege o fotografie a produsului.'}), 422
+    content = upload.stream.read(_CATALOG_IMAGE_MAX_BYTES + 1)
+    if not content:
+        return jsonify({'error': 'Fotografia este goală.'}), 422
+    if len(content) > _CATALOG_IMAGE_MAX_BYTES:
+        return jsonify({'error': 'Fotografia poate avea maximum 4 MB.'}), 413
+    mime_type = catalog_image_mime(content)
+    if not mime_type:
+        return jsonify({'error': 'Folosește o imagine JPEG, PNG sau WebP.'}), 415
+    image_count = g.db.execute(
+        text('SELECT COUNT(*) FROM catalog_product_images WHERE item_id = :id'),
+        {'id': item_id},
+    ).scalar()
+    if int(image_count or 0) >= 10:
+        return jsonify({'error': 'Produsul poate avea maximum 10 fotografii încărcate.'}), 409
+    extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}[mime_type]
+    file_name = secure_filename(upload.filename or '')[:240] or f'produs-{item_id}.{extension}'
+    image_id = g.db.execute(text('''
+        INSERT INTO catalog_product_images
+            (item_id, mime_type, file_name, file_size, content, created_by)
+        VALUES (:item_id, :mime_type, :file_name, :file_size, :content, :actor)
+        RETURNING image_id
+    '''), {
+        'item_id': item_id,
+        'mime_type': mime_type,
+        'file_name': file_name,
+        'file_size': len(content),
+        'content': content,
+        'actor': str(g.current_user.get('username') or 'unknown'),
+    }).scalar()
+    g.db.commit()
+    image_url = url_for(
+        'admin.get_catalog_image', image_id=image_id,
+        _external=True, _scheme='https',
+    )
+    return jsonify({
+        'image_id': str(image_id),
+        'image_url': image_url,
+        'mime_type': mime_type,
+        'file_size': len(content),
+    }), 201
+
+
+@admin_bp.route('/catalog-images/<uuid:image_id>', methods=['GET'])
+@with_db
+def get_catalog_image(image_id):
+    """Serve an immutable product photo by unguessable UUID."""
+    row = g.db.execute(text('''
+        SELECT mime_type, file_name, content
+        FROM catalog_product_images WHERE image_id = :id
+    '''), {'id': str(image_id)}).fetchone()
+    if not row:
+        return jsonify({'error': 'Fotografia nu există.'}), 404
+    response = send_file(
+        BytesIO(bytes(row.content)), mimetype=row.mime_type,
+        download_name=row.file_name, max_age=31536000, conditional=False,
+        etag=False,
+    )
+    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
 
 
 @admin_bp.route('/items/<int:item_id>/local-catalog', methods=['PUT'])
