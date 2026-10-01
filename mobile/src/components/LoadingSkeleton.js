@@ -58,12 +58,12 @@ export function OrderListSkeleton({ count = 5 }) {
 
 export function CatalogListSkeleton({ count = 4 }) {
   return (
-    <View accessibilityRole="progressbar" accessibilityLabel="Se încarcă produsele de verificat">
+    <View style={styles.catalogList} accessibilityRole="progressbar" accessibilityLabel="Se încarcă produsele de verificat">
       {Array.from({ length: count }).map((_, index) => (
         <View key={index} style={styles.catalogCard}>
           <SkeletonLine width="72%" height={18} />
-          <SkeletonLine width="88%" height={14} style={styles.lineGap} />
-          <SkeletonLine width="64%" height={13} style={styles.lineGapSmall} />
+          <SkeletonLine width="88%" height={14} />
+          <SkeletonLine width="64%" height={13} />
           <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
         </View>
       ))}
@@ -71,24 +71,62 @@ export function CatalogListSkeleton({ count = 4 }) {
   );
 }
 
+function CatalogFieldSkeleton({ labelWidth = '42%', multiline = false }) {
+  return (
+    <View style={styles.catalogField}>
+      <SkeletonLine width={labelWidth} height={14} />
+      <SkeletonLine width="100%" height={multiline ? 90 : 48} />
+    </View>
+  );
+}
+
+function CatalogHelpSkeleton({ short = false }) {
+  return (
+    <View style={styles.catalogHelp}>
+      <SkeletonLine width="100%" height={13} />
+      <SkeletonLine width={short ? '48%' : '78%'} height={13} />
+    </View>
+  );
+}
+
 export function CatalogDetailsSkeleton() {
   return (
-    <View accessibilityRole="progressbar" accessibilityLabel="Se încarcă detaliile produsului">
+    <View style={styles.catalogDetails} accessibilityRole="progressbar" accessibilityLabel="Se încarcă detaliile produsului">
       <View style={styles.catalogCard}>
         <SkeletonLine width="44%" height={18} />
-        <SkeletonLine width="100%" height={48} style={styles.lineGap} />
-        <SkeletonLine width="100%" height={48} style={styles.lineGap} />
+        <CatalogFieldSkeleton labelWidth="66%" />
+        <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
+        <CatalogHelpSkeleton />
       </View>
       <View style={styles.catalogCard}>
         <SkeletonLine width="38%" height={18} />
-        {Array.from({ length: 5 }).map((_, index) => (
-          <View key={index} style={styles.catalogField}>
-            <SkeletonLine width="42%" height={12} />
-            <SkeletonLine width="100%" height={48} style={styles.lineGapSmall} />
-          </View>
-        ))}
+        <CatalogHelpSkeleton />
+        <CatalogFieldSkeleton labelWidth="28%" />
+        <CatalogFieldSkeleton labelWidth="46%" />
+        <CatalogFieldSkeleton labelWidth="40%" />
+        <CatalogFieldSkeleton labelWidth="30%" />
+        <CatalogFieldSkeleton labelWidth="34%" multiline />
+        <CatalogFieldSkeleton labelWidth="72%" multiline />
+        <SkeletonLine width="48%" height={14} />
+        <View style={styles.catalogPhotoActions}>
+          <SkeletonLine width={118} height={48} style={styles.catalogAction} />
+          <SkeletonLine width={118} height={48} style={styles.catalogAction} />
+        </View>
+        <SkeletonLine width="70%" height={13} />
+        <CatalogFieldSkeleton labelWidth="58%" multiline />
+        <SkeletonLine width="52%" height={14} />
+        <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
         <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
       </View>
+    </View>
+  );
+}
+
+export function CatalogPhotoSkeleton() {
+  return (
+    <View style={styles.catalogPhoto} accessibilityRole="progressbar" accessibilityLabel="Se încarcă fotografia produsului">
+      <SkeletonLine width="100%" height={220} style={styles.catalogPhotoPreview} />
+      <SkeletonLine width="100%" height={48} style={styles.catalogAction} />
     </View>
   );
 }
@@ -127,12 +165,21 @@ const styles = StyleSheet.create({
   },
   orderMain: { flex: 1, paddingRight: 16 },
   orderAction: { borderRadius: 18 },
+  catalogList: { gap: 14 },
+  catalogDetails: { gap: 14 },
   catalogCard: {
-    padding: 14, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder,
+    padding: 14, gap: 12, borderWidth: 1, borderColor: colors.cardBorder,
     borderRadius: radii.card, backgroundColor: colors.cardBg,
   },
-  catalogAction: { marginTop: 14, borderRadius: radii.button },
-  catalogField: { marginTop: 14 },
+  catalogAction: { borderRadius: radii.button },
+  catalogField: { gap: 6 },
+  catalogHelp: { gap: 6 },
+  catalogPhotoActions: { flexDirection: 'row', gap: 8 },
+  catalogPhoto: {
+    gap: 8, padding: 8, borderWidth: 1, borderColor: colors.cardBorder,
+    borderRadius: 10, backgroundColor: colors.background,
+  },
+  catalogPhotoPreview: { borderRadius: 8 },
   busyScreen: {
     flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.background,

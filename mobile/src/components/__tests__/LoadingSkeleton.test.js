@@ -22,8 +22,11 @@ describe('mobile skeleton geometry', () => {
   it('matches catalogue product cards and manual detail fields', () => {
     expect(source).toMatch(/export function CatalogListSkeleton/);
     expect(source).toMatch(/export function CatalogDetailsSkeleton/);
+    expect(source).toMatch(/export function CatalogPhotoSkeleton/);
     expect(source).toMatch(/catalogCard/);
     expect(source).toMatch(/catalogField/);
-    expect(source).toMatch(/height=\{48\}/);
+    expect(source).toMatch(/multiline \? 90 : 48/);
+    expect(source).toMatch(/height=\{220\}/);
+    expect(source).toMatch(/catalogPhotoActions/);
   });
 });

@@ -20,4 +20,10 @@ describe('manual catalogue product photos', () => {
     expect(source).toMatch(/removeImage\(imageUrl\)/);
     expect(source).toMatch(/maximum 10/);
   });
+
+  it('shows an image-shaped loading skeleton while a photo uploads', () => {
+    expect(source).toMatch(/setUploadingImage\(true\)/);
+    expect(source).toMatch(/uploadingImage \? <CatalogPhotoSkeleton \/>/);
+    expect(source).toMatch(/setUploadingImage\(false\)/);
+  });
 });

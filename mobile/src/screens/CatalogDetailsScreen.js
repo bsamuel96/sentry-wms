@@ -7,7 +7,7 @@ import { CatalogButton, CatalogField, catalogStyles as styles } from '../compone
 import { screenStyles } from '../theme/styles';
 import client from '../api/client';
 import { catalogToForm, formToCatalog, CATALOG_TIMEOUT } from '../utils/catalogReview';
-import { CatalogDetailsSkeleton } from '../components/LoadingSkeleton';
+import { CatalogDetailsSkeleton, CatalogPhotoSkeleton } from '../components/LoadingSkeleton';
 
 const MAX_PRODUCT_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -23,6 +23,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
   const [lookupReference, setLookupReference] = useState('');
   const [matches, setMatches] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const action = useRef(false);
@@ -105,6 +106,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
       if (imageUrls(form.images).length >= 10) {
         throw new Error('Produsul poate avea maximum 10 imagini.');
       }
+      setUploadingImage(true);
       const extension = asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg';
       const fileName = asset.fileName || `produs-${discovery.item_id}-${Date.now()}.${extension}`;
       const body = new FormData();
@@ -123,6 +125,8 @@ export default function CatalogDetailsScreen({ navigation, route }) {
       });
     } catch (err) {
       setError(err.message || 'Fotografia produsului nu a putut fi încărcată.');
+    } finally {
+      setUploadingImage(false);
     }
   }
 
@@ -159,7 +163,8 @@ export default function CatalogDetailsScreen({ navigation, route }) {
               <CatalogButton secondary title="Cameră" disabled={busy || imageUrls(form.images).length >= 10} onPress={() => pickProductImage('camera')} />
               <CatalogButton secondary title="Upload" disabled={busy || imageUrls(form.images).length >= 10} onPress={() => pickProductImage('library')} />
             </View>
-            {imageUrls(form.images).length ? <View style={styles.imageGrid}>
+            {uploadingImage || imageUrls(form.images).length ? <View style={styles.imageGrid}>
+              {uploadingImage ? <CatalogPhotoSkeleton /> : null}
               {imageUrls(form.images).map((imageUrl, index) => <View key={imageUrl} style={styles.imageCard}>
                 <Image source={{ uri: imageUrl }} accessibilityLabel={`Imagine produs ${index + 1}`} style={styles.productImage} resizeMode="contain" />
                 <CatalogButton secondary title={`Șterge imaginea ${index + 1}`} disabled={busy} onPress={() => removeImage(imageUrl)} />

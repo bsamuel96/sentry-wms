@@ -1,4 +1,4 @@
-# Product review (1.48.0)
+# Product review (1.48.1)
 
 Open **Produse de verificat** from the APK home screen. The menu is available
 to administrators and users granted the **items** page permission in Sentry.
