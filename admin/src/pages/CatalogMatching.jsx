@@ -313,7 +313,7 @@ export default function CatalogMatching() {
   }
 
   function selectVisiblePending() {
-    const eligible = rows.filter((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean));
+    const eligible = rows.filter((row) => row.status === 'PENDING');
     setSelectedIds((current) => {
       const next = new Set(current);
       const allSelected = eligible.length > 0 && eligible.every((row) => next.has(Number(row.discovery_id)));
@@ -405,7 +405,12 @@ export default function CatalogMatching() {
       <input
         type="checkbox"
         checked={selectedIds.has(Number(row.discovery_id))}
-        disabled={row.status !== 'PENDING' || !canSearchScannedCodeInTecDoc(row.ean) || bulkLoading || connexBulkLoading}
+        disabled={row.status !== 'PENDING' || bulkLoading || connexBulkLoading}
+        title={row.status !== 'PENDING'
+          ? 'Produsul a fost deja verificat.'
+          : canSearchScannedCodeInTecDoc(row.ean)
+            ? 'Selectează pentru echivalare automată.'
+            : 'Selectează produsul. Codul fără EAN valid va fi omis de automatizare și rămâne disponibil pentru echivalare manuală.'}
         aria-label={`Selectează ${row.ean} pentru echivalare automată`}
         onClick={(event) => event.stopPropagation()}
         onChange={() => toggleRow(row.discovery_id)}
@@ -450,7 +455,7 @@ export default function CatalogMatching() {
           {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <input className="form-input" value={search} onChange={(event) => { resetBulkSelection(); setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
-        <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) || bulkLoading || connexBulkLoading}>
+        <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING') || bulkLoading || connexBulkLoading}>
           Selectează pagina
         </button>
         <button type="button" className="btn btn-primary" onClick={bulkMatchSelected} disabled={!selectedIds.size || bulkLoading || connexBulkLoading}>
@@ -459,6 +464,9 @@ export default function CatalogMatching() {
         <button type="button" className="btn btn-primary" onClick={bulkMatchSelectedConnex} disabled={!selectedIds.size || bulkLoading || connexBulkLoading}>
           {connexBulkLoading ? 'Se caută în Connex…' : `Echivalează prin Connex după EAN (${selectedIds.size})`}
         </button>
+        <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+          Produsele fără EAN valid pot fi selectate, dar automatizarea le omite; deschide rândul pentru echivalare manuală.
+        </span>
       </div>
       <div className="filter-bar">
         <button type="button" className="btn btn-primary" disabled={bulkLoading || connexBulkLoading} onClick={bulkMatchAll}>Echivalează toate în TecDoc</button>
@@ -483,6 +491,11 @@ export default function CatalogMatching() {
         <div className={`alert ${bulkResult.failed || bulkResult.not_found ? 'alert-error' : 'alert-success'}`} role="status">
           {bulkResult.not_found ? <strong style={{ display: 'block', marginBottom: 5 }}>INEXISTENTE ÎN TECDOC: {bulkResult.not_found}</strong> : null}
           {bulkResult.matched} echivalate · {bulkResult.ambiguous} necesită alegere · {bulkResult.skipped} omise{bulkResult.failed ? ` · ${bulkResult.failed} erori` : ''}.
+          {bulkResult.results?.some((result) => result.reason === 'invalid_ean') ? (
+            <span style={{ display: 'block', marginTop: 6 }}>
+              Fără EAN valid, pentru verificare manuală: {bulkResult.results.filter((result) => result.reason === 'invalid_ean').map((result) => result.ean).filter(Boolean).join(', ')}.
+            </span>
+          ) : null}
           {bulkResult.not_found ? (
             <span style={{ display: 'block', marginTop: 6 }}>
               Nu este un mismatch: TecDoc nu a returnat nicio potrivire EAN exactă pentru {bulkResult.results.filter((result) => result.status === 'not_found').map((result) => result.ean).filter(Boolean).join(', ') || 'codurile marcate'}.
@@ -494,6 +507,11 @@ export default function CatalogMatching() {
         <div className={`alert ${connexBulkResult.failed || connexBulkResult.not_found ? 'alert-error' : 'alert-success'}`} role="status">
           {connexBulkResult.not_found ? <strong style={{ display: 'block', marginBottom: 5 }}>INEXISTENTE ÎN CONNEX: {connexBulkResult.not_found}</strong> : null}
           {connexBulkResult.matched} echivalate prin Connex · {connexBulkResult.ambiguous} necesită alegere · {connexBulkResult.skipped} omise{connexBulkResult.failed ? ` · ${connexBulkResult.failed} erori` : ''}.
+          {connexBulkResult.results?.some((result) => result.reason === 'invalid_ean') ? (
+            <span style={{ display: 'block', marginTop: 6 }}>
+              Fără EAN valid, pentru verificare manuală: {connexBulkResult.results.filter((result) => result.reason === 'invalid_ean').map((result) => result.ean).filter(Boolean).join(', ')}.
+            </span>
+          ) : null}
           {connexBulkResult.ambiguous ? <span style={{ display: 'block', marginTop: 6 }}>Deschide produsele ambigue și alege manual rezultatul Connex corect.</span> : null}
         </div>
       ) : null}

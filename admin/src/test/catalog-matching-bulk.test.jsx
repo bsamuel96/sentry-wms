@@ -84,6 +84,31 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     expect(await screen.findByText(/1 echivalate · 0 necesită alegere/)).toBeInTheDocument();
   });
 
+  it('permite selectarea unui produs în așteptare chiar dacă nu are EAN valid', async () => {
+    const manualRow = {
+      ...discovery,
+      discovery_id: 42,
+      item_id: 92,
+      ean: 'ATK-03.03.054',
+      sku: 'SCAN-ATK-03.03.054',
+    };
+    get.mockResolvedValueOnce(jsonResponse(page([manualRow]))).mockResolvedValueOnce(jsonResponse(page([manualRow])));
+    post.mockResolvedValueOnce(jsonResponse({
+      ok: true,
+      summary: { requested: 1, matched: 0, not_found: 0, ambiguous: 0, skipped: 1, failed: 0 },
+      results: [{ discovery_id: 42, ean: manualRow.ean, status: 'skipped', reason: 'invalid_ean' }],
+    }));
+
+    render(<CatalogMatching />);
+    const checkbox = await screen.findByRole('checkbox', { name: 'Selectează ATK-03.03.054 pentru echivalare automată' });
+    expect(checkbox).toBeEnabled();
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Echivalează automat după EAN (1)' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/bulk-match', { discovery_ids: [42] }));
+    expect(await screen.findByText(/Fără EAN valid, pentru verificare manuală: ATK-03.03.054/)).toBeInTheDocument();
+  });
+
   it('echivalează selecția după EAN prin Connex', async () => {
     get.mockResolvedValueOnce(jsonResponse(page())).mockResolvedValueOnce(jsonResponse(page([])));
     post.mockResolvedValueOnce(jsonResponse({
