@@ -59,6 +59,30 @@ def _unique_auto_ean_matches(payload):
     return list(unique.values())
 
 
+def _unique_connex_ean_matches(payload, ean):
+    """Keep complete Connex candidates that confirm the scanned EAN exactly."""
+    if not isinstance(payload, dict):
+        return []
+    expected = str(ean or "").strip()
+    unique = {}
+    for candidate in payload.get("matches", []):
+        candidate_eans = {
+            str(value or "").strip()
+            for value in ([candidate.get("ean")] + list(candidate.get("eans") or []))
+        }
+        key = (str(candidate.get("id") or "").strip(), str(candidate.get("code") or "").strip())
+        if expected in candidate_eans and all(key) and candidate.get("brand") and candidate.get("name"):
+            unique[key] = candidate
+    return list(unique.values())
+
+
+def _connex_lookup(ean, product_id=""):
+    payload = {"ean": str(ean or "").strip()}
+    if product_id:
+        payload["product_id"] = str(product_id)
+    return catalog_request("/api/integrations/sentry/connex-catalog", payload=payload)
+
+
 def _apply_match(discovery, match, actor):
     brand = str(match.get("brand") or "").strip()
     name = str(match.get("name") or "").strip()
@@ -96,6 +120,69 @@ def _apply_match(discovery, match, actor):
         "payload": json.dumps(match),
         "actor": actor,
     })
+
+
+def _apply_connex_match(discovery, match, actor):
+    """Persist an exact Connex EAN identity as a Sentry-owned Local product."""
+    brand = str(match.get("brand") or "").strip()
+    name = str(match.get("name") or "").strip()
+    matched_code = str(match.get("code") or "").strip()
+    product_id = str(match.get("id") or "").strip()
+    category = str(match.get("category") or "Connex").strip()[:100] or "Connex"
+    description = str(match.get("description") or name).strip()[:1000]
+    eans = list(dict.fromkeys(
+        str(value or "").strip()
+        for value in ([discovery.scanned_ean, match.get("ean")] + list(match.get("eans") or []))
+        if str(value or "").strip()
+    ))[:50]
+    payload = {
+        **match,
+        "source": "connex",
+        "matchType": "connex_ean",
+        "name": name,
+        "brand": brand,
+        "code": matched_code,
+        "category": category,
+        "description": description,
+        "eans": eans,
+        "images": list(match.get("images") or [])[:10],
+        "references": list(match.get("references") or [])[:40],
+    }
+    g.db.execute(text("""
+        UPDATE items
+        SET item_name = :name,
+            description = :description,
+            mpn = :code,
+            upc = :ean,
+            barcode_aliases = CAST(:aliases AS jsonb),
+            category = :category,
+            updated_at = NOW()
+        WHERE item_id = :iid
+    """), {
+        "iid": discovery.item_id,
+        "name": name[:200],
+        "description": description,
+        "code": matched_code[:64],
+        "ean": discovery.scanned_ean,
+        "aliases": json.dumps(eans),
+        "category": category,
+    })
+    g.db.execute(text("""
+        UPDATE item_catalog_discoveries
+        SET status = 'MANUAL', tecdoc_article_id = NULL,
+            tecdoc_code = :code, tecdoc_brand = :brand, tecdoc_name = :name,
+            tecdoc_match_type = 'connex_ean', tecdoc_payload = CAST(:payload AS jsonb),
+            reviewed_by = :actor, reviewed_at = NOW(), updated_at = NOW()
+        WHERE discovery_id = :id
+    """), {
+        "id": discovery.discovery_id,
+        "code": matched_code,
+        "brand": brand,
+        "name": name,
+        "payload": json.dumps(payload),
+        "actor": actor,
+    })
+    return product_id
 
 
 def _serialize_discovery(row):
@@ -265,6 +352,64 @@ def queue_match(discovery_id):
     return jsonify({"ok": True, "item_id": discovery.item_id, "status": "MATCHED"})
 
 
+@catalog_discovery_bp.route("/queue/<int:discovery_id>/connex-matches", methods=["GET"])
+@require_auth
+@require_admin_or_page_permission("items")
+@with_db
+def queue_connex_matches(discovery_id):
+    row = g.db.execute(
+        text("SELECT scanned_ean FROM item_catalog_discoveries WHERE discovery_id = :id"),
+        {"id": discovery_id},
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Produsul de verificat nu există."}), 404
+    if not _is_searchable_ean(row.scanned_ean):
+        return jsonify({"error": "Codul scanat nu este un EAN valid pentru căutarea Connex."}), 422
+    try:
+        lookup = _connex_lookup(row.scanned_ean)
+        return jsonify({
+            "searchedBy": "connex_ean",
+            "matches": _unique_connex_ean_matches(lookup, row.scanned_ean),
+        })
+    except CatalogDiscoveryError as exc:
+        return jsonify({"error": str(exc)}), exc.status
+
+
+@catalog_discovery_bp.route("/queue/<int:discovery_id>/connex-match", methods=["POST"])
+@require_auth
+@require_admin_or_page_permission("items")
+@with_db
+def queue_connex_match(discovery_id):
+    body = request.get_json(silent=True) or {}
+    discovery = g.db.execute(text("""
+        SELECT discovery_id, item_id, scanned_ean, status
+        FROM item_catalog_discoveries
+        WHERE discovery_id = :id
+        FOR UPDATE
+    """), {"id": discovery_id}).fetchone()
+    if not discovery:
+        return jsonify({"error": "Produsul de verificat nu există."}), 404
+    if discovery.status != "PENDING":
+        return jsonify({"error": "Produsul a fost deja verificat."}), 409
+    product_id = str(body.get("productId") or body.get("id") or "").strip()
+    code = str(body.get("code") or "").strip()
+    if not product_id or not code:
+        return jsonify({"error": "Alege un produs Connex valid."}), 422
+    try:
+        lookup = _connex_lookup(discovery.scanned_ean, product_id)
+    except CatalogDiscoveryError as exc:
+        return jsonify({"error": str(exc)}), exc.status
+    match = next((candidate for candidate in _unique_connex_ean_matches(lookup, discovery.scanned_ean)
+                  if str(candidate.get("id") or "") == product_id
+                  and str(candidate.get("code") or "") == code), None)
+    if not match:
+        return jsonify({"error": "Rezultatul Connex nu mai este disponibil. Repetă căutarea."}), 409
+    actor = str(g.current_user.get("username") or "unknown")
+    _apply_connex_match(discovery, match, actor)
+    g.db.commit()
+    return jsonify({"ok": True, "item_id": discovery.item_id, "status": "MANUAL", "source": "connex"})
+
+
 @catalog_discovery_bp.route("/queue/bulk-match", methods=["POST"])
 @require_auth
 @require_admin_or_page_permission("items")
@@ -386,6 +531,100 @@ def queue_bulk_match():
         summary["not_found"], summary["skipped"], summary["failed"],
     )
     return jsonify({"ok": True, "summary": summary, "results": results})
+
+
+@catalog_discovery_bp.route("/queue/bulk-match-connex", methods=["POST"])
+@require_auth
+@require_admin_or_page_permission("items")
+@with_db
+def queue_bulk_match_connex():
+    body = request.get_json(silent=True) or {}
+    raw_ids = body.get("discovery_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify({"error": "Selectează cel puțin un produs."}), 422
+    if len(raw_ids) > 100:
+        return jsonify({"error": "Poți echivala maximum 100 de produse într-un lot."}), 422
+    try:
+        discovery_ids = list(dict.fromkeys(int(value) for value in raw_ids))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Selecția conține identificatori invalizi."}), 422
+    if any(value < 1 for value in discovery_ids):
+        return jsonify({"error": "Selecția conține identificatori invalizi."}), 422
+
+    discoveries = []
+    for discovery_id in discovery_ids:
+        row = g.db.execute(text("""
+            SELECT discovery_id, item_id, scanned_ean, status
+            FROM item_catalog_discoveries WHERE discovery_id = :id
+        """), {"id": discovery_id}).fetchone()
+        if row:
+            discoveries.append(row)
+
+    results = []
+    candidates = []
+    for discovery in discoveries:
+        if discovery.status != "PENDING":
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "already_reviewed"})
+        elif not _is_searchable_ean(discovery.scanned_ean):
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "invalid_ean"})
+        else:
+            candidates.append(discovery)
+
+    def lookup_connex(discovery):
+        initial = _unique_connex_ean_matches(_connex_lookup(discovery.scanned_ean), discovery.scanned_ean)
+        if len(initial) != 1:
+            return initial
+        refreshed = _connex_lookup(discovery.scanned_ean, initial[0]["id"])
+        return _unique_connex_ean_matches(refreshed, discovery.scanned_ean)
+
+    resolved = []
+    if candidates:
+        with ThreadPoolExecutor(max_workers=min(4, len(candidates))) as executor:
+            pending = {executor.submit(lookup_connex, row): row for row in candidates}
+            for future in as_completed(pending):
+                discovery = pending[future]
+                try:
+                    matches = future.result()
+                except CatalogDiscoveryError as exc:
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "error", "reason": "lookup_failed", "error": str(exc)})
+                    continue
+                if not matches:
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "not_found", "reason": "no_exact_ean"})
+                elif len(matches) > 1:
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "ambiguous", "reason": "multiple_exact_ean"})
+                else:
+                    resolved.append((discovery, matches[0]))
+
+    actor = str(g.current_user.get("username") or "unknown")
+    for discovery, match in resolved:
+        locked = g.db.execute(text("""
+            SELECT discovery_id, item_id, scanned_ean, status
+            FROM item_catalog_discoveries WHERE discovery_id = :id FOR UPDATE
+        """), {"id": discovery.discovery_id}).fetchone()
+        if not locked or locked.status != "PENDING":
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "already_reviewed"})
+            continue
+        _apply_connex_match(locked, match, actor)
+        results.append({
+            "discovery_id": discovery.discovery_id,
+            "ean": discovery.scanned_ean,
+            "item_id": discovery.item_id,
+            "status": "matched",
+            "connex_code": str(match.get("code") or ""),
+        })
+
+    missing = set(discovery_ids) - {row.discovery_id for row in discoveries}
+    results.extend({"discovery_id": value, "status": "not_found", "reason": "missing_discovery"} for value in sorted(missing))
+    g.db.commit()
+    summary = {
+        "requested": len(discovery_ids),
+        "matched": sum(result["status"] == "matched" for result in results),
+        "ambiguous": sum(result["status"] == "ambiguous" for result in results),
+        "not_found": sum(result["status"] == "not_found" for result in results),
+        "skipped": sum(result["status"] == "skipped" for result in results),
+        "failed": sum(result["status"] == "error" for result in results),
+    }
+    return jsonify({"ok": True, "source": "connex", "summary": summary, "results": results})
 
 
 @catalog_discovery_bp.route("/queue/<int:discovery_id>", methods=["DELETE"])

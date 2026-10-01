@@ -84,6 +84,23 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     expect(await screen.findByText(/1 echivalate · 0 necesită alegere/)).toBeInTheDocument();
   });
 
+  it('echivalează selecția după EAN prin Connex', async () => {
+    get.mockResolvedValueOnce(jsonResponse(page())).mockResolvedValueOnce(jsonResponse(page([])));
+    post.mockResolvedValueOnce(jsonResponse({
+      ok: true,
+      source: 'connex',
+      summary: { requested: 1, matched: 1, not_found: 0, ambiguous: 0, skipped: 0, failed: 0 },
+      results: [{ discovery_id: 41, status: 'matched', connex_code: 'ATK 03.03.054' }],
+    }));
+
+    render(<CatalogMatching />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selectează 4006381333931 pentru echivalare automată' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Echivalează prin Connex după EAN (1)' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [41] }));
+    expect(await screen.findByText(/1 echivalate prin Connex · 0 necesită alegere/)).toBeInTheDocument();
+  });
+
   it('arată EAN-urile inexistente proeminent și nu le numește mismatch', async () => {
     get.mockResolvedValueOnce(jsonResponse(page())).mockResolvedValueOnce(jsonResponse(page()));
     post.mockResolvedValueOnce(jsonResponse({
@@ -152,5 +169,30 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
       articleId: '777', code: '698255', reference: '', confirmEquivalent: false,
     }));
     expect(window.confirm).not.toHaveBeenCalledWith(expect.stringContaining('Confirmi că produsul fizic'));
+  });
+
+  it('caută EAN-ul în Connex din fereastra produsului și salvează rezultatul unic', async () => {
+    let queueLoads = 0;
+    get.mockImplementation(async path => {
+      if (path.includes('/connex-matches')) return jsonResponse({
+        searchedBy: 'connex_ean',
+        matches: [{ id: '987', code: 'ATK 03.03.054', brand: 'ATK AUTOTECHNIK', name: 'Filtru combustibil', matchType: 'connex_ean' }],
+      });
+      if (path.includes('/matches?')) return jsonResponse({ searchedBy: 'ean', matches: [] });
+      if (path.includes('/local-catalog')) return jsonResponse({ status: 'PENDING', catalog: {} });
+      queueLoads += 1;
+      return jsonResponse(queueLoads === 1 ? page() : page([]));
+    });
+    post.mockResolvedValueOnce(jsonResponse({ ok: true, item_id: 91, status: 'MANUAL', source: 'connex' }));
+
+    render(<CatalogMatching />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Caută în Connex după EAN' }));
+
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-matches'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-match', {
+      productId: '987', code: 'ATK 03.03.054',
+    }));
+    expect(await screen.findByText('4006381333931 a fost echivalat prin Connex cu ATK AUTOTECHNIK ATK 03.03.054.')).toBeInTheDocument();
   });
 });

@@ -236,6 +236,100 @@ def test_bulk_match_skips_checksum_invalid_numeric_code_without_calling_catalog(
     assert query("SELECT status FROM item_catalog_discoveries WHERE item_id=%s", (item_id,)) == [("PENDING",)]
 
 
+def connex_match(ean="4006381333931", product_id="987"):
+    return {
+        "id": product_id,
+        "source": "connex",
+        "matchType": "connex_ean",
+        "code": "ATK 03.03.054",
+        "brand": "ATK AUTOTECHNIK",
+        "name": "Filtru combustibil",
+        "description": "Filtru combustibil identificat în Connex",
+        "category": "Filtre",
+        "ean": ean,
+        "eans": [ean],
+        "images": ["https://cdn.example.test/atk.jpg"],
+        "references": [{"code": "OE1", "type": "OE", "manufacturer": "VW"}],
+    }
+
+
+def test_connex_ean_lookup_and_choice_store_local_catalog(client, auth_headers, monkeypatch):
+    discovery_id, item_id = create_discovery()
+    calls = []
+
+    def lookup(path, **kwargs):
+        calls.append((path, kwargs))
+        assert path == "/api/integrations/sentry/connex-catalog"
+        assert kwargs["payload"]["ean"] == "4006381333931"
+        return {"searchedBy": "connex_ean", "matches": [connex_match()]}
+
+    monkeypatch.setattr(routes, "catalog_request", lookup)
+    matches = client.get(
+        f"/api/catalog-discovery/queue/{discovery_id}/connex-matches",
+        headers=auth_headers,
+    )
+    assert matches.status_code == 200, matches.get_data(as_text=True)
+    assert matches.get_json()["matches"][0]["code"] == "ATK 03.03.054"
+
+    saved = client.post(
+        f"/api/catalog-discovery/queue/{discovery_id}/connex-match",
+        headers=auth_headers,
+        json={"productId": "987", "code": "ATK 03.03.054"},
+    )
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    assert calls[-1][1]["payload"]["product_id"] == "987"
+    assert query(
+        "SELECT status,tecdoc_code,tecdoc_match_type FROM item_catalog_discoveries WHERE item_id=%s",
+        (item_id,),
+    ) == [("MANUAL", "ATK 03.03.054", "connex_ean")]
+    assert query(
+        "SELECT item_name,mpn,category,upc FROM items WHERE item_id=%s",
+        (item_id,),
+    ) == [("Filtru combustibil", "ATK 03.03.054", "Filtre", "4006381333931")]
+    local_catalog = client.get(f"/api/admin/items/{item_id}/local-catalog", headers=auth_headers)
+    assert local_catalog.status_code == 200
+    assert local_catalog.get_json()["catalog"]["references"][0]["code"] == "OE1"
+
+
+def test_bulk_connex_ean_match_applies_only_one_exact_candidate(client, auth_headers, monkeypatch):
+    exact_id, exact_item_id = create_discovery("4006381333931")
+    ambiguous_id, ambiguous_item_id = create_discovery("5901234123457")
+
+    def lookup(_path, **kwargs):
+        payload = kwargs["payload"]
+        if payload["ean"] == "4006381333931":
+            assert not payload.get("product_id") or payload["product_id"] == "987"
+            return {"matches": [connex_match()]}
+        return {"matches": [
+            connex_match("5901234123457", "201"),
+            {**connex_match("5901234123457", "202"), "code": "ATK 03.03.055"},
+        ]}
+
+    monkeypatch.setattr(routes, "catalog_request", lookup)
+    response = client.post(
+        "/api/catalog-discovery/queue/bulk-match-connex",
+        headers=auth_headers,
+        json={"discovery_ids": [exact_id, ambiguous_id]},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["summary"] == {
+        "requested": 2,
+        "matched": 1,
+        "ambiguous": 1,
+        "not_found": 0,
+        "skipped": 0,
+        "failed": 0,
+    }
+    assert query(
+        "SELECT status,tecdoc_match_type FROM item_catalog_discoveries WHERE item_id=%s",
+        (exact_item_id,),
+    ) == [("MANUAL", "connex_ean")]
+    assert query(
+        "SELECT status FROM item_catalog_discoveries WHERE item_id=%s",
+        (ambiguous_item_id,),
+    ) == [("PENDING",)]
+
+
 def test_delete_unused_scanned_product_removes_stock_and_keeps_audit(client, auth_headers):
     discovery_id, item_id = create_discovery("5941234567890")
     query(

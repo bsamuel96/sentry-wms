@@ -10,21 +10,23 @@ import { matchPendingCatalog } from '../../../mobile/src/utils/catalogReview.js'
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'În așteptare' },
   { value: 'MATCHED', label: 'Echivalate' },
-  { value: 'MANUAL', label: 'Identificate manual' },
+  { value: 'MANUAL', label: 'Identificate local / Connex' },
   { value: 'IGNORED', label: 'Ignorate' },
   { value: 'ALL', label: 'Toate' },
 ];
 
-function statusLabel(status) {
-  if (status === 'MANUAL') return 'Identificat manual';
-  if (status === 'MATCHED') return 'Echivalat';
-  if (status === 'IGNORED') return 'Ignorat';
+function statusLabel(rowOrStatus) {
+  const row = typeof rowOrStatus === 'object' ? rowOrStatus : { status: rowOrStatus };
+  if (row.status === 'MANUAL' && row.tecdoc_match_type === 'connex_ean') return 'Echivalat Connex';
+  if (row.status === 'MANUAL') return 'Identificat manual';
+  if (row.status === 'MATCHED') return 'Echivalat';
+  if (row.status === 'IGNORED') return 'Ignorat';
   return 'În așteptare';
 }
 
-function statusTag(status) {
-  const className = status === 'MATCHED' ? 'tag-success' : status === 'IGNORED' ? 'tag-gray' : 'tag-info';
-  return <span className={`tag ${className}`}>{statusLabel(status)}</span>;
+function statusTag(row) {
+  const className = row.status === 'MATCHED' || row.tecdoc_match_type === 'connex_ean' ? 'tag-success' : row.status === 'IGNORED' ? 'tag-gray' : 'tag-info';
+  return <span className={`tag ${className}`}>{statusLabel(row)}</span>;
 }
 
 export default function CatalogMatching() {
@@ -43,6 +45,12 @@ export default function CatalogMatching() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  const [connexBulkLoading, setConnexBulkLoading] = useState(false);
+  const [connexBulkResult, setConnexBulkResult] = useState(null);
+  const [connexMatches, setConnexMatches] = useState([]);
+  const [connexLoading, setConnexLoading] = useState(false);
+  const [connexError, setConnexError] = useState('');
+  const [connexSavingId, setConnexSavingId] = useState('');
   const [allProgress, setAllProgress] = useState(null);
   const [allRunning, setAllRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -54,7 +62,7 @@ export default function CatalogMatching() {
   useEffect(() => () => { stopAll.current = true; }, []);
 
   async function bulkMatchAll() {
-    if (bulkLoading) return;
+    if (bulkLoading || connexBulkLoading) return;
     stopAll.current = false;
     setBulkLoading(true); setAllRunning(true); setStopping(false);
     setAllProgress(null); setBulkResult(null); setError('');
@@ -88,6 +96,7 @@ export default function CatalogMatching() {
   function resetBulkSelection() {
     setSelectedIds(new Set());
     setBulkResult(null);
+    setConnexBulkResult(null);
   }
 
   async function loadQueue(signal, preserveError = false) {
@@ -155,7 +164,65 @@ export default function CatalogMatching() {
     setMatches([]);
     setMatchError('');
     setSearchedBy('');
+    setConnexMatches([]);
+    setConnexError('');
     if (row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) findMatches(row, '');
+  }
+
+  async function findConnexMatches(row = selected) {
+    if (!row || connexLoading) return;
+    setConnexLoading(true);
+    setConnexError('');
+    setConnexMatches([]);
+    try {
+      const response = await api.get(`/catalog-discovery/queue/${row.discovery_id}/connex-matches`);
+      if (!response?.ok) {
+        const payload = await response?.json();
+        throw new Error(payload?.error || 'Connex nu a răspuns.');
+      }
+      const payload = await response.json();
+      const nextMatches = payload.matches || [];
+      if (nextMatches.length === 1) {
+        await chooseConnexMatch(nextMatches[0], row);
+        return;
+      }
+      setConnexMatches(nextMatches);
+      if (!nextMatches.length) setConnexError('Connex nu a returnat niciun produs cu acest EAN exact.');
+    } catch (lookupError) {
+      setConnexError(lookupError.message || 'Connex nu a răspuns.');
+    } finally {
+      setConnexLoading(false);
+    }
+  }
+
+  async function chooseConnexMatch(match, target = selected) {
+    if (!target || connexSavingId) return;
+    const discoveryId = Number(target.discovery_id);
+    const scannedCode = target.ean;
+    setConnexSavingId(String(match.id));
+    setConnexError('');
+    try {
+      const response = await api.post(`/catalog-discovery/queue/${target.discovery_id}/connex-match`, {
+        productId: match.id,
+        code: match.code,
+      });
+      if (!response?.ok) {
+        const payload = await response?.json();
+        throw new Error(payload?.error || 'Echivalarea Connex nu a putut fi salvată.');
+      }
+      setSuccess(`${scannedCode} a fost echivalat prin Connex cu ${[match.brand, match.code].filter(Boolean).join(' ')}.`);
+      setSelected(null);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(discoveryId);
+        return next;
+      });
+      await loadQueue();
+    } catch (saveError) {
+      setConnexError(saveError.message || 'Echivalarea Connex nu a putut fi salvată.');
+    } finally {
+      setConnexSavingId('');
+    }
   }
 
   async function chooseMatch(match, target = selected, matchReference = reference, eanLedLookup = false) {
@@ -270,6 +337,29 @@ export default function CatalogMatching() {
     }
   }
 
+  async function bulkMatchSelectedConnex() {
+    const ids = [...selectedIds];
+    if (!ids.length || bulkLoading || connexBulkLoading) return;
+    setConnexBulkLoading(true);
+    setConnexBulkResult(null);
+    setError('');
+    try {
+      const response = await api.post('/catalog-discovery/queue/bulk-match-connex', { discovery_ids: ids });
+      if (!response?.ok) {
+        const payload = await response?.json();
+        throw new Error(payload?.error || 'Echivalarea prin Connex nu a putut fi executată.');
+      }
+      const payload = await response.json();
+      setConnexBulkResult(payload.summary ? { ...payload.summary, results: payload.results || [] } : null);
+      setSelectedIds(new Set());
+      await loadQueue();
+    } catch (bulkError) {
+      setError(bulkError.message || 'Echivalarea prin Connex nu a putut fi executată.');
+    } finally {
+      setConnexBulkLoading(false);
+    }
+  }
+
   async function deleteDiscovery(row = selected) {
     if (!row || savingId) return;
     const locations = (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ');
@@ -304,7 +394,7 @@ export default function CatalogMatching() {
       <input
         type="checkbox"
         checked={selectedIds.has(Number(row.discovery_id))}
-        disabled={row.status !== 'PENDING' || !canSearchScannedCodeInTecDoc(row.ean) || bulkLoading}
+        disabled={row.status !== 'PENDING' || !canSearchScannedCodeInTecDoc(row.ean) || bulkLoading || connexBulkLoading}
         aria-label={`Selectează ${row.ean} pentru echivalare automată`}
         onClick={(event) => event.stopPropagation()}
         onChange={() => toggleRow(row.discovery_id)}
@@ -314,7 +404,7 @@ export default function CatalogMatching() {
     { key: 'item_name', label: 'Produs curent' },
     { key: 'quantity_on_hand', label: 'Cantitate' },
     { key: 'locations', label: 'Locații', render: (row) => (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—' },
-    { key: 'status', label: 'Stare', render: (row) => statusTag(row.status) },
+    { key: 'status', label: 'Stare', render: (row) => statusTag(row) },
     { key: 'created_by', label: 'Scanat de', render: (row) => row.created_by || '—' },
     { key: 'actions', label: 'Acțiuni', render: (row) => (
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -326,28 +416,31 @@ export default function CatalogMatching() {
         </button>
       </div>
     ) },
-  ], [bulkLoading, savingId, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [bulkLoading, connexBulkLoading, savingId, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
-      <PageHeader title="Echivalare TecDoc" />
+      <PageHeader title="Echivalare produse" />
       <p style={{ margin: '-8px 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Un singur rezultat găsit pornind de la EAN devine automat produs TecDoc. Numai căutările manuale după cod producător/OE și rezultatele multiple cer confirmare.
+        Caută produsele după EAN în TecDoc sau Connex. Un singur rezultat exact se salvează automat; rezultatele multiple cer alegerea ta.
       </p>
       <div className="filter-bar">
         <select className="form-select" value={status} onChange={(event) => { resetBulkSelection(); setStatus(event.target.value); setPage(1); }} style={{ width: 180 }}>
           {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <input className="form-input" value={search} onChange={(event) => { resetBulkSelection(); setSearch(event.target.value); setPage(1); }} placeholder="Caută cod, SKU sau denumire" style={{ maxWidth: 360 }} />
-        <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) || bulkLoading}>
+        <button type="button" className="btn" onClick={selectVisiblePending} disabled={!rows.some((row) => row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) || bulkLoading || connexBulkLoading}>
           Selectează pagina
         </button>
-        <button type="button" className="btn btn-primary" onClick={bulkMatchSelected} disabled={!selectedIds.size || bulkLoading}>
+        <button type="button" className="btn btn-primary" onClick={bulkMatchSelected} disabled={!selectedIds.size || bulkLoading || connexBulkLoading}>
           {bulkLoading ? 'Se echivalează…' : `Echivalează automat după EAN (${selectedIds.size})`}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={bulkMatchSelectedConnex} disabled={!selectedIds.size || bulkLoading || connexBulkLoading}>
+          {connexBulkLoading ? 'Se caută în Connex…' : `Echivalează prin Connex după EAN (${selectedIds.size})`}
         </button>
       </div>
       <div className="filter-bar">
-        <button type="button" className="btn btn-primary" disabled={bulkLoading} onClick={bulkMatchAll}>Echivalează toate în TecDoc</button>
+        <button type="button" className="btn btn-primary" disabled={bulkLoading || connexBulkLoading} onClick={bulkMatchAll}>Echivalează toate în TecDoc</button>
         <span>Toate produsele în așteptare, din toate paginile, indiferent de filtre. Păstrează pagina deschisă.</span>
         {allRunning && <button type="button" className="btn" disabled={stopping} onClick={() => { stopAll.current = true; setStopping(true); }}>{stopping ? 'Se oprește după lotul curent…' : 'Oprește după lotul curent'}</button>}
       </div>
@@ -359,7 +452,7 @@ export default function CatalogMatching() {
       {success ? (
         <div className="alert alert-success" role="status">
           {success}{' '}
-          <button type="button" className="btn btn-sm" onClick={() => { resetBulkSelection(); setStatus('MATCHED'); setPage(1); setSuccess(''); }}>
+          <button type="button" className="btn btn-sm" onClick={() => { resetBulkSelection(); setStatus('ALL'); setPage(1); setSuccess(''); }}>
             Vezi echivalatele
           </button>
         </div>
@@ -374,6 +467,13 @@ export default function CatalogMatching() {
               Nu este un mismatch: TecDoc nu a returnat nicio potrivire EAN exactă pentru {bulkResult.results.filter((result) => result.status === 'not_found').map((result) => result.ean).filter(Boolean).join(', ') || 'codurile marcate'}.
             </span>
           ) : null}
+        </div>
+      ) : null}
+      {connexBulkResult ? (
+        <div className={`alert ${connexBulkResult.failed || connexBulkResult.not_found ? 'alert-error' : 'alert-success'}`} role="status">
+          {connexBulkResult.not_found ? <strong style={{ display: 'block', marginBottom: 5 }}>INEXISTENTE ÎN CONNEX: {connexBulkResult.not_found}</strong> : null}
+          {connexBulkResult.matched} echivalate prin Connex · {connexBulkResult.ambiguous} necesită alegere · {connexBulkResult.skipped} omise{connexBulkResult.failed ? ` · ${connexBulkResult.failed} erori` : ''}.
+          {connexBulkResult.ambiguous ? <span style={{ display: 'block', marginTop: 6 }}>Deschide produsele ambigue și alege manual rezultatul Connex corect.</span> : null}
         </div>
       ) : null}
       {loading && !rows.length ? <p>Se încarcă…</p> : null}
@@ -404,8 +504,8 @@ export default function CatalogMatching() {
             <span className="detail-label">Produs Sentry</span><span>{selected.item_name}</span>
             <span className="detail-label">Stoc</span><span>{selected.quantity_on_hand} buc.</span>
             <span className="detail-label">Locații</span><span>{(selected.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—'}</span>
-            <span className="detail-label">Stare</span><span>{statusLabel(selected.status)}</span>
-            {selected.tecdoc_code ? <><span className="detail-label">{selected.status === 'MANUAL' ? 'Identitate manuală' : 'TecDoc'}</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
+            <span className="detail-label">Stare</span><span>{statusLabel(selected)}</span>
+            {selected.tecdoc_code ? <><span className="detail-label">{selected.tecdoc_match_type === 'connex_ean' ? 'Connex' : selected.status === 'MANUAL' ? 'Identitate manuală' : 'TecDoc'}</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
           </div>
 
           {selected.status === 'PENDING' ? (
@@ -416,6 +516,7 @@ export default function CatalogMatching() {
                   <input className="form-input" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Ex: C113" style={{ width: '100%' }} />
                 </label>
                 <button type="button" className="btn btn-primary" onClick={() => findMatches()} disabled={matchLoading || (!reference.trim() && !canSearchScannedCodeInTecDoc(selected.ean))}>{matchLoading ? 'Se caută…' : 'Caută în TecDoc'}</button>
+                <button type="button" className="btn btn-primary" onClick={() => findConnexMatches()} disabled={connexLoading || !canSearchScannedCodeInTecDoc(selected.ean)}>{connexLoading ? 'Se caută în Connex…' : 'Caută în Connex după EAN'}</button>
               </div>
               {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Sentry. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
               {matchError ? <div className="alert alert-error" role="alert">{matchError}</div> : null}
@@ -434,6 +535,19 @@ export default function CatalogMatching() {
                       <small style={{ display: 'block', marginTop: 4, color: 'var(--text-secondary)' }}>{match.matchType === 'ean' ? 'EAN exact' : 'Potrivire după referință · necesită confirmare'}</small>
                     </div>
                     <button type="button" className="btn btn-primary" onClick={() => chooseMatch(match)} disabled={Boolean(savingId)}>{savingId === String(match.id) ? 'Se salvează…' : 'Alege'}</button>
+                  </div>
+                ))}
+              </div>
+              {connexError ? <div className="alert alert-error" role="alert">{connexError}</div> : null}
+              <div style={{ display: 'grid', gap: 8, marginTop: connexMatches.length ? 12 : 0 }}>
+                {connexMatches.map((match) => (
+                  <div key={`connex-${match.id}-${match.code}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <strong>{match.brand} · {match.name}</strong>
+                      <div className="mono" style={{ marginTop: 4 }}>{match.code}</div>
+                      <small style={{ display: 'block', marginTop: 4, color: 'var(--text-secondary)' }}>Connex · EAN exact</small>
+                    </div>
+                    <button type="button" className="btn btn-primary" onClick={() => chooseConnexMatch(match)} disabled={Boolean(connexSavingId)}>{connexSavingId === String(match.id) ? 'Se salvează…' : 'Alege Connex'}</button>
                   </div>
                 ))}
               </div>
