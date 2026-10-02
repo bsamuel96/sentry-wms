@@ -1,6 +1,8 @@
 """Sentry-owned Local catalogue and Connex reference pricing."""
 from io import BytesIO
 import json
+import re
+import uuid
 
 from flask import g, jsonify, request, send_file, url_for
 from sqlalchemy import text
@@ -23,8 +25,11 @@ def _item(item_id, lock=False):
         # Same lock order as TecDoc matching; re-read status after waiting.
         g.db.execute(text('SELECT discovery_id FROM item_catalog_discoveries WHERE item_id = :id FOR UPDATE'), {'id': item_id})
     return g.db.execute(text('''
-        SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category,
-               i.description, i.local_pricing, d.status, d.tecdoc_payload
+        SELECT i.item_id, i.external_id, i.sku, i.item_name, i.upc, i.mpn,
+               i.category, i.description, i.local_pricing,
+               i.created_at AS item_created_at, i.updated_at AS item_updated_at,
+               d.status, d.tecdoc_payload, d.created_by,
+               d.created_at AS catalog_created_at, d.reviewed_by, d.reviewed_at
         FROM items i LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
         WHERE i.item_id = :id
     ''' + (' FOR UPDATE OF i' if lock else '')), {'id': item_id}).fetchone()
@@ -32,19 +37,175 @@ def _item(item_id, lock=False):
 
 def _serialize(item):
     return {
-        'item_id': item.item_id, 'status': item.status,
+        'item_id': item.item_id, 'external_id': str(item.external_id),
+        'sku': item.sku, 'status': item.status,
         'catalog': item.tecdoc_payload or {
             'name': item.item_name, 'code': item.mpn or '', 'brand': '',
             'eans': [item.upc] if item.upc else [], 'images': [], 'references': [],
             'category': item.category or '', 'description': item.description or '',
         },
         'pricing': item.local_pricing or {},
+        'audit': {
+            'created_by': item.created_by,
+            'created_at': item.catalog_created_at.isoformat() if item.catalog_created_at else (
+                item.item_created_at.isoformat() if item.item_created_at else None
+            ),
+            'saved_by': item.reviewed_by or item.created_by,
+            'saved_at': item.reviewed_at.isoformat() if item.reviewed_at else (
+                item.item_updated_at.isoformat() if item.item_updated_at else None
+            ),
+        },
     }
 
 
 def _audit(item_id, action, details):
     write_audit_log(g.db, action, 'item', item_id,
                     g.current_user.get('username') or 'unknown', None, details=details)
+
+
+def _catalog_image_upload(upload):
+    if not upload:
+        return None
+    content = upload.stream.read(_CATALOG_IMAGE_MAX_BYTES + 1)
+    if not content:
+        raise ValueError('Fotografia este goală.')
+    if len(content) > _CATALOG_IMAGE_MAX_BYTES:
+        raise OverflowError('Fotografia poate avea maximum 4 MB.')
+    mime_type = catalog_image_mime(content)
+    if not mime_type:
+        raise TypeError('Folosește o imagine JPEG, PNG sau WebP.')
+    extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}[mime_type]
+    file_name = secure_filename(upload.filename or '')[:240] or f'produs.{extension}'
+    return {
+        'content': content,
+        'mime_type': mime_type,
+        'file_name': file_name,
+        'file_size': len(content),
+    }
+
+
+def _insert_catalog_image(item_id, image, actor):
+    image_id = g.db.execute(text('''
+        INSERT INTO catalog_product_images
+            (item_id, mime_type, file_name, file_size, content, created_by)
+        VALUES (:item_id, :mime_type, :file_name, :file_size, :content, :actor)
+        RETURNING image_id
+    '''), {'item_id': item_id, 'actor': actor, **image}).scalar()
+    image_url = url_for(
+        'admin.get_catalog_image', image_id=image_id,
+        _external=True, _scheme='https',
+    )
+    return image_id, image_url
+
+
+@admin_bp.route('/local-catalog/products', methods=['POST'])
+@require_auth
+@require_admin_or_page_permission('items')
+@with_db
+def create_manual_catalog_product():
+    """Create a Sentry-owned manual product, including price and audit data."""
+    body = request.form.to_dict() if request.form else (request.get_json(silent=True) or {})
+    if not isinstance(body, dict):
+        return jsonify({'error': 'Date de produs invalide.'}), 422
+
+    name = str(body.get('name') or '').strip()
+    ean = str(body.get('ean') or '').strip()
+    brand = str(body.get('brand') or '').strip() or 'LOCAL'
+    code = str(body.get('code') or '').strip() or ean
+    category = str(body.get('category') or '').strip() or 'Produs manual'
+    description = str(body.get('description') or '').strip()
+    if not name or len(name) > 200:
+        return jsonify({'error': 'Numele produsului este obligatoriu și poate avea maximum 200 de caractere.'}), 422
+    if not ean or len(ean) > 50 or any(ord(char) < 32 for char in ean):
+        return jsonify({'error': 'EAN-ul este obligatoriu și poate avea maximum 50 de caractere.'}), 422
+
+    try:
+        catalog = validate_catalog({
+            'name': name,
+            'brand': brand,
+            'code': code,
+            'category': category,
+            'description': description,
+            'eans': [ean],
+            'images': [],
+            'references': [],
+        })
+        actor = str(g.current_user.get('username') or 'unknown')
+        pricing = update_pricing({}, 'manual', price=body.get('price'), actor=actor)
+        image = _catalog_image_upload(request.files.get('file'))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except OverflowError as exc:
+        return jsonify({'error': str(exc)}), 413
+    except TypeError as exc:
+        return jsonify({'error': str(exc)}), 415
+
+    duplicate = g.db.execute(text('''
+        SELECT item_id FROM items
+        WHERE upc = :ean OR barcode_aliases @> CAST(:aliases AS jsonb)
+        LIMIT 1
+    '''), {'ean': ean, 'aliases': json.dumps([ean])}).fetchone()
+    if duplicate:
+        return jsonify({
+            'error': 'Există deja un produs cu acest EAN.',
+            'item_id': duplicate.item_id,
+        }), 409
+
+    sku_fragment = re.sub(r'[^A-Z0-9]+', '-', ean.upper()).strip('-')[:34] or uuid.uuid4().hex[:12].upper()
+    sku = f'MANUAL-{sku_fragment}'[:50]
+    if g.db.execute(text('SELECT 1 FROM items WHERE sku = :sku'), {'sku': sku}).fetchone():
+        sku = f'{sku[:41]}-{uuid.uuid4().hex[:8].upper()}'
+
+    item_id = g.db.execute(text('''
+        INSERT INTO items
+            (sku, item_name, description, upc, mpn, category,
+             barcode_aliases, local_pricing, external_id)
+        VALUES
+            (:sku, :name, :description, :ean, :code, :category,
+             CAST(:aliases AS jsonb), CAST(:pricing AS jsonb), :external_id)
+        RETURNING item_id
+    '''), {
+        'sku': sku,
+        'name': catalog['name'],
+        'description': catalog['description'],
+        'ean': ean,
+        'code': catalog['code'],
+        'category': catalog['category'],
+        'aliases': json.dumps(catalog['eans']),
+        'pricing': json.dumps(pricing),
+        'external_id': str(uuid.uuid4()),
+    }).scalar()
+
+    if image:
+        _, image_url = _insert_catalog_image(item_id, image, actor)
+        catalog['images'] = [image_url]
+        catalog['imageUrl'] = image_url
+
+    g.db.execute(text('''
+        INSERT INTO item_catalog_discoveries
+            (item_id, scanned_ean, status, tecdoc_code, tecdoc_brand,
+             tecdoc_name, tecdoc_match_type, tecdoc_payload,
+             created_by, reviewed_by, reviewed_at)
+        VALUES
+            (:item_id, :ean, 'MANUAL', :code, :brand,
+             :name, 'manual', CAST(:payload AS jsonb),
+             :actor, :actor, NOW())
+    '''), {
+        'item_id': item_id,
+        'ean': ean,
+        'code': catalog['code'],
+        'brand': catalog['brand'],
+        'name': catalog['name'],
+        'payload': json.dumps(catalog),
+        'actor': actor,
+    })
+    _audit(item_id, 'LOCAL_CATALOG_CREATE', {
+        'catalog': catalog,
+        'pricing': pricing,
+        'origin': 'mobile_manual_entry',
+    })
+    g.db.commit()
+    return jsonify(_serialize(_item(item_id))), 201
 
 
 @admin_bp.route('/items/<int:item_id>/local-catalog', methods=['GET'])
@@ -70,45 +231,31 @@ def upload_catalog_image(item_id):
     upload = request.files.get('file')
     if not upload:
         return jsonify({'error': 'Alege o fotografie a produsului.'}), 422
-    content = upload.stream.read(_CATALOG_IMAGE_MAX_BYTES + 1)
-    if not content:
-        return jsonify({'error': 'Fotografia este goală.'}), 422
-    if len(content) > _CATALOG_IMAGE_MAX_BYTES:
-        return jsonify({'error': 'Fotografia poate avea maximum 4 MB.'}), 413
-    mime_type = catalog_image_mime(content)
-    if not mime_type:
-        return jsonify({'error': 'Folosește o imagine JPEG, PNG sau WebP.'}), 415
+    try:
+        image = _catalog_image_upload(upload)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except OverflowError as exc:
+        return jsonify({'error': str(exc)}), 413
+    except TypeError as exc:
+        return jsonify({'error': str(exc)}), 415
     image_count = g.db.execute(
         text('SELECT COUNT(*) FROM catalog_product_images WHERE item_id = :id'),
         {'id': item_id},
     ).scalar()
     if int(image_count or 0) >= 10:
         return jsonify({'error': 'Produsul poate avea maximum 10 fotografii încărcate.'}), 409
-    extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}[mime_type]
-    file_name = secure_filename(upload.filename or '')[:240] or f'produs-{item_id}.{extension}'
-    image_id = g.db.execute(text('''
-        INSERT INTO catalog_product_images
-            (item_id, mime_type, file_name, file_size, content, created_by)
-        VALUES (:item_id, :mime_type, :file_name, :file_size, :content, :actor)
-        RETURNING image_id
-    '''), {
-        'item_id': item_id,
-        'mime_type': mime_type,
-        'file_name': file_name,
-        'file_size': len(content),
-        'content': content,
-        'actor': str(g.current_user.get('username') or 'unknown'),
-    }).scalar()
-    g.db.commit()
-    image_url = url_for(
-        'admin.get_catalog_image', image_id=image_id,
-        _external=True, _scheme='https',
+    image_id, image_url = _insert_catalog_image(
+        item_id,
+        image,
+        str(g.current_user.get('username') or 'unknown'),
     )
+    g.db.commit()
     return jsonify({
         'image_id': str(image_id),
         'image_url': image_url,
-        'mime_type': mime_type,
-        'file_size': len(content),
+        'mime_type': image['mime_type'],
+        'file_size': image['file_size'],
     }), 201
 
 

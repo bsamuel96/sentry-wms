@@ -365,6 +365,67 @@ def test_manual_catalog_photo_upload_is_persistent_and_saveable(client, auth_hea
     ) == [(len(b"\xff\xd8\xff\xe0product-photo"),)]
 
 
+def test_mobile_can_create_a_complete_manual_product_with_price_photo_and_audit(client, auth_headers):
+    ean = f"594{uuid.uuid4().int % 10**10:010d}"
+    created = client.post(
+        "/api/admin/local-catalog/products",
+        headers=auth_headers,
+        data={
+            "name": "Produs introdus manual",
+            "ean": ean,
+            "price": "59,90",
+            "brand": "Marca locală",
+            "code": "MAN-001",
+            "category": "Filtre",
+            "description": "Creat din APK",
+            "file": (BytesIO(b"\xff\xd8\xff\xe0manual-product-photo"), "manual.jpg"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert created.status_code == 201, created.get_data(as_text=True)
+    payload = created.get_json()
+    assert payload["status"] == "MANUAL"
+    assert payload["catalog"]["name"] == "Produs introdus manual"
+    assert payload["catalog"]["eans"] == [ean]
+    assert payload["pricing"]["price"] == 59.9
+    assert payload["pricing"]["includes_vat"] is True
+    assert payload["audit"]["created_by"] == "admin"
+    assert payload["audit"]["saved_by"] == "admin"
+    assert payload["audit"]["created_at"]
+    assert payload["audit"]["saved_at"]
+    assert len(payload["catalog"]["images"]) == 1
+
+    item_id = payload["item_id"]
+    assert query(
+        "SELECT item_name,upc,mpn,category FROM items WHERE item_id=%s",
+        (item_id,),
+    ) == [("Produs introdus manual", ean, "MAN-001", "Filtre")]
+    assert query(
+        "SELECT status,created_by,reviewed_by FROM item_catalog_discoveries WHERE item_id=%s",
+        (item_id,),
+    ) == [("MANUAL", "admin", "admin")]
+    assert query(
+        "SELECT action_type,user_id FROM audit_log WHERE entity_type='ITEM' AND entity_id=%s ORDER BY log_id DESC LIMIT 1",
+        (item_id,),
+    ) == [("LOCAL_CATALOG_CREATE", "admin")]
+
+    lookup = client.get(f"/api/lookup/item/{ean}", headers=auth_headers)
+    assert lookup.status_code == 200, lookup.get_data(as_text=True)
+    lookup_item = lookup.get_json()["item"]
+    assert lookup_item["item_name"] == "Produs introdus manual"
+    assert lookup_item["local_pricing"]["price"] == 59.9
+    assert lookup_item["image_url"] == payload["catalog"]["images"][0]
+    assert lookup_item["created_by"] == "admin"
+
+    duplicate = client.post(
+        "/api/admin/local-catalog/products",
+        headers=auth_headers,
+        json={"name": "Duplicat", "ean": ean, "price": 10},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.get_json()["item_id"] == item_id
+
+
 def test_delete_unused_scanned_product_removes_stock_and_keeps_audit(client, auth_headers):
     discovery_id, item_id = create_discovery("5941234567890")
     query(

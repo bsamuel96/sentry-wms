@@ -1,6 +1,7 @@
 """
 Lookup endpoints: item/bin barcode lookups and text search.
 """
+import json
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import text
@@ -52,11 +53,15 @@ def lookup_item(barcode):
     item_row = g.db.execute(
         text(
             """
-            SELECT i.item_id, i.sku, i.item_name, i.upc, i.category,
-                   i.weight_lbs, i.description, i.barcode_aliases,
+            SELECT i.item_id, i.external_id, i.sku, i.item_name, i.upc,
+                   i.mpn, i.category, i.weight_lbs, i.description,
+                   i.barcode_aliases, i.local_pricing, i.created_at, i.updated_at,
                    d.status AS catalog_status, d.tecdoc_article_id,
                    d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
-                   d.tecdoc_match_type, d.tecdoc_payload
+                   d.tecdoc_match_type, d.tecdoc_payload,
+                   d.created_by AS catalog_created_by,
+                   d.created_at AS catalog_created_at,
+                   d.reviewed_by, d.reviewed_at
             FROM items i
             LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             WHERE i.upc = :barcode
@@ -65,7 +70,7 @@ def lookup_item(barcode):
             LIMIT 1
             """
         ),
-        {"barcode": barcode, "barcode_json": f'["{barcode}"]'},
+        {"barcode": barcode, "barcode_json": json.dumps([barcode])},
     ).fetchone()
 
     if not item_row:
@@ -74,19 +79,33 @@ def lookup_item(barcode):
     image_urls = catalog_image_urls(item_row.tecdoc_payload)
     item = {
         "item_id": item_row.item_id,
+        "external_id": str(item_row.external_id),
         "sku": item_row.sku,
         "item_name": item_row.item_name,
         "upc": item_row.upc,
+        "mpn": item_row.mpn,
         "category": item_row.category,
+        "description": item_row.description,
+        "barcode_aliases": item_row.barcode_aliases or [],
         "weight_lbs": float(item_row.weight_lbs) if item_row.weight_lbs else None,
+        "local_pricing": item_row.local_pricing or {},
         "catalog_status": item_row.catalog_status or "KNOWN",
         "tecdoc_article_id": item_row.tecdoc_article_id,
         "tecdoc_code": item_row.tecdoc_code,
         "tecdoc_brand": item_row.tecdoc_brand,
         "tecdoc_name": item_row.tecdoc_name,
         "tecdoc_match_type": item_row.tecdoc_match_type,
+        "tecdoc_payload": item_row.tecdoc_payload or {},
         "image_url": image_urls[0] if image_urls else None,
         "images": image_urls,
+        "created_by": item_row.catalog_created_by,
+        "created_at": (
+            item_row.catalog_created_at or item_row.created_at
+        ).isoformat() if (item_row.catalog_created_at or item_row.created_at) else None,
+        "saved_by": item_row.reviewed_by or item_row.catalog_created_by,
+        "saved_at": (
+            item_row.reviewed_at or item_row.updated_at
+        ).isoformat() if (item_row.reviewed_at or item_row.updated_at) else None,
     }
 
     location_rows = g.db.execute(

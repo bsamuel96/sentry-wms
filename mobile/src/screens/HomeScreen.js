@@ -19,6 +19,7 @@ import WorkspaceUndoButton from '../components/WorkspaceUndoButton';
 const APP_VERSION = Constants.expoConfig?.version || '1.47.0';
 
 const FUNCTIONS = [
+  { key: 'manual-product', page: 'items', label: 'ADAUGĂ PRODUS', sub: 'Nume, EAN, preț și poză', screen: 'ManualProduct', accent: 'copper' },
   { key: 'catalog-review', page: 'items', label: 'PRODUSE DE VERIFICAT', sub: 'TecDoc și detalii manuale', screen: 'CatalogReview', accent: 'copper' },
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },

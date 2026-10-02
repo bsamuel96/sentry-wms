@@ -26,6 +26,7 @@ import TransferScreen from '../screens/TransferScreen';
 import StockEntryScreen from '../screens/StockEntryScreen';
 import CatalogReviewScreen from '../screens/CatalogReviewScreen';
 import CatalogDetailsScreen from '../screens/CatalogDetailsScreen';
+import ManualProductScreen from '../screens/ManualProductScreen';
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
@@ -106,6 +107,7 @@ export default function AppNavigator() {
               <Stack.Screen name="StockEntry" component={StockEntryScreen} />
               <Stack.Screen name="CatalogReview" component={CatalogReviewScreen} />
               <Stack.Screen name="CatalogDetails" component={CatalogDetailsScreen} />
+              <Stack.Screen name="ManualProduct" component={ManualProductScreen} />
             </>
           )
         ) : (
