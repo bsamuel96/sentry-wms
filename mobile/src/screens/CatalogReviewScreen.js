@@ -107,7 +107,7 @@ export default function CatalogReviewScreen({ navigation }) {
           <CatalogButton secondary={status !== 'PENDING'} title="De verificat" disabled={running} onPress={() => { setStatus('PENDING'); setPage(1); }} />
           <CatalogButton secondary={status !== 'MANUAL'} title="Completate manual" disabled={running} onPress={() => { setStatus('MANUAL'); setPage(1); }} />
         </View>
-        <TextInput style={styles.input} accessibilityLabel="Caută produs" placeholder="EAN, SKU sau denumire" value={search} editable={!running} onChangeText={value => { setSearch(value); setPage(1); }} />
+        <TextInput style={styles.input} accessibilityLabel="Caută produs" placeholder="EAN, cod produs, SKU sau denumire" value={search} editable={!running} onChangeText={value => { setSearch(value); setPage(1); }} />
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <CatalogButton secondary title="Reîncarcă lista" disabled={loading || running} onPress={() => { setError(''); load(); }} />
         <Text>{pagination.total} produse · Pagina {page} / {pagination.pages}</Text>
@@ -115,6 +115,7 @@ export default function CatalogReviewScreen({ navigation }) {
           <View key={row.discovery_id} style={styles.card}>
             <Text style={styles.title}>{row.item_name}</Text>
             <Text>EAN: {row.ean} · SKU: {row.sku}</Text>
+            {row.product_code ? <Text>Cod produs: {row.product_code}</Text> : null}
             <Text style={styles.help}>Stoc: {row.quantity_on_hand} · {(row.locations || []).map(location => `${location.bin_code}: ${location.quantity}`).join(', ') || 'Fără locație'}</Text>
             <CatalogButton secondary title={row.status === 'MANUAL' ? 'Editează detaliile' : 'Verifică / completează detalii'} disabled={running} onPress={() => navigation.navigate('CatalogDetails', { discovery: row })} />
           </View>

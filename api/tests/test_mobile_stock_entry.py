@@ -26,6 +26,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
         "warehouse_id": warehouse_id,
         "bin_id": bin_id,
         "barcode": "1654644071",
+        "product_code": "ATK 03.03.054",
         "quantity": 4,
         "idempotency_key": key,
     }
@@ -37,6 +38,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
     assert payload["quantity_in_bin"] == 4
     assert payload["catalog_status"] == "PENDING"
     assert payload["created_provisional_item"] is True
+    assert payload["item"]["product_code"] == "ATK 03.03.054"
 
     replay = client.post("/api/inventory/stock-entry", headers=auth_headers, json=body)
     assert replay.status_code == 200
@@ -50,6 +52,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
         "SELECT scanned_ean,status FROM item_catalog_discoveries WHERE item_id=%s",
         (item_id,),
     ) == [("1654644071", "PENDING")]
+    assert query("SELECT mpn FROM items WHERE item_id=%s", (item_id,)) == [("ATK 03.03.054",)]
 
 
 def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
@@ -63,12 +66,15 @@ def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
         "warehouse_id": warehouse_id,
         "bin_id": bin_id,
         "ean": "5901234123457",
+        "product_code": "REF-KNOWN-42",
         "quantity": 2,
         "idempotency_key": str(uuid.uuid4()),
     })
     assert response.status_code == 201, response.get_data(as_text=True)
     assert response.get_json()["created_provisional_item"] is False
     assert response.get_json()["catalog_status"] == "KNOWN"
+    assert response.get_json()["item"]["product_code"] == "REF-KNOWN-42"
+    assert query("SELECT mpn FROM items WHERE item_id=%s", (item_id,)) == [("REF-KNOWN-42",)]
     assert query("SELECT 1 FROM item_catalog_discoveries WHERE item_id=%s", (item_id,)) == []
 
 
@@ -131,12 +137,25 @@ def test_location_can_be_registered_by_scan_and_replayed(client, auth_headers):
     assert repeated.get_json()["bin"]["bin_id"] == payload["bin"]["bin_id"]
 
 
-def test_stock_entry_rejects_invalid_product_code(client, auth_headers):
+def test_stock_entry_rejects_invalid_scanned_code(client, auth_headers):
     bin_id, warehouse_id, _ = first_bin()
     response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
         "warehouse_id": warehouse_id,
         "bin_id": bin_id,
         "ean": "1234",
+        "quantity": 1,
+        "idempotency_key": str(uuid.uuid4()),
+    })
+    assert response.status_code == 422
+
+
+def test_stock_entry_rejects_overlong_product_reference(client, auth_headers):
+    bin_id, warehouse_id, _ = first_bin()
+    response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
+        "warehouse_id": warehouse_id,
+        "bin_id": bin_id,
+        "ean": "5941234567890",
+        "product_code": "X" * 101,
         "quantity": 1,
         "idempotency_key": str(uuid.uuid4()),
     })

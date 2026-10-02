@@ -69,7 +69,7 @@ def _stock_entry_payload(db, row, *, repeated=False):
         {"iid": row.item_id, "bid": row.bin_id},
     ).scalar()
     item = db.execute(
-        text("SELECT sku, item_name, upc FROM items WHERE item_id = :iid"),
+        text("SELECT sku, item_name, upc, mpn FROM items WHERE item_id = :iid"),
         {"iid": row.item_id},
     ).fetchone()
     discovery = db.execute(
@@ -89,6 +89,8 @@ def _stock_entry_payload(db, row, *, repeated=False):
             "sku": item.sku,
             "item_name": item.item_name,
             "upc": item.upc,
+            "mpn": item.mpn,
+            "product_code": item.mpn,
             "catalog_status": discovery.status if discovery else "KNOWN",
             "tecdoc_article_id": discovery.tecdoc_article_id if discovery else None,
             "tecdoc_code": discovery.tecdoc_code if discovery else None,
@@ -258,10 +260,13 @@ def stock_entry():
         return jsonify({"error": "Depozitul, locația, cantitatea și cheia cererii sunt obligatorii."}), 422
 
     barcode = str(body.get("barcode") or body.get("ean") or "").strip()
+    product_code = str(body.get("product_code") or "").strip()
     if not _valid_scanned_product_code(barcode):
         return jsonify({
             "error": "Scanează un cod de bare de 6–50 caractere (cifre, litere, punct, cratimă, / sau +)."
         }), 422
+    if len(product_code) > 100 or any(ord(char) < 32 for char in product_code):
+        return jsonify({"error": "Codul produsului poate avea maximum 100 de caractere."}), 422
     if quantity < 1 or quantity > 100000:
         return jsonify({"error": "Cantitatea trebuie să fie între 1 și 100000."}), 422
 
@@ -307,7 +312,7 @@ def stock_entry():
     g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:barcode))"), {"barcode": f"barcode:{barcode}"})
     item = g.db.execute(
         text("""
-            SELECT item_id, sku, item_name, upc, external_id
+            SELECT item_id, sku, item_name, upc, mpn, external_id
             FROM items
             WHERE upc = :barcode
                OR barcode_aliases @> CAST(:aliases AS jsonb)
@@ -330,19 +335,20 @@ def stock_entry():
         item = g.db.execute(
             text("""
                 INSERT INTO items (
-                    sku, item_name, description, upc, category,
+                    sku, item_name, description, upc, mpn, category,
                     default_bin_id, external_id
                 ) VALUES (
-                    :sku, :name, :description, :barcode, :category,
+                    :sku, :name, :description, :barcode, NULLIF(:product_code, ''), :category,
                     :bin_id, :external_id
                 )
-                RETURNING item_id, sku, item_name, upc, external_id
+                RETURNING item_id, sku, item_name, upc, mpn, external_id
             """),
             {
                 "sku": sku,
                 "name": f"Produs nou – {barcode}",
                 "description": "Creat prin scanare în depozit; identificarea TecDoc este în așteptare.",
                 "barcode": barcode,
+                "product_code": product_code,
                 "category": "În așteptare TecDoc",
                 "bin_id": bin_id,
                 "external_id": str(uuid.uuid4()),
@@ -356,6 +362,11 @@ def stock_entry():
                 ON CONFLICT (item_id) DO NOTHING
             """),
             {"iid": item.item_id, "barcode": barcode, "actor": str(user.get("username") or "unknown")},
+        )
+    elif product_code and product_code != str(item.mpn or ""):
+        g.db.execute(
+            text("UPDATE items SET mpn = :product_code, updated_at = NOW() WHERE item_id = :iid"),
+            {"product_code": product_code, "iid": item.item_id},
         )
 
     new_quantity = add_inventory(g.db, item.item_id, bin_id, warehouse_id, quantity)
@@ -407,6 +418,7 @@ def stock_entry():
         details={
             "operation": "mobile_stock_entry",
             "barcode": barcode,
+            "product_code": product_code or None,
             "bin_id": bin_id,
             "bin_code": bin_row.bin_code,
             "quantity": quantity,

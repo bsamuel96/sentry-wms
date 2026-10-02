@@ -87,6 +87,7 @@ def create_discovery(ean="4006381333931"):
 
 def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monkeypatch):
     discovery_id, item_id = create_discovery()
+    query("UPDATE items SET mpn=%s WHERE item_id=%s", ("ATK 03.03.054", item_id))
     monkeypatch.setattr(routes, 'catalog_request', lambda *_args, **_kwargs: {
         'ean': '4006381333931',
         'searchedBy': 'ean',
@@ -100,6 +101,10 @@ def test_admin_queue_lists_and_matches_scanned_items(client, auth_headers, monke
     listed = client.get('/api/catalog-discovery/queue?status=PENDING&per_page=25', headers=auth_headers)
     assert listed.status_code == 200
     assert listed.get_json()['discoveries'][0]['discovery_id'] == discovery_id
+    assert listed.get_json()['discoveries'][0]['product_code'] == 'ATK 03.03.054'
+    searched = client.get('/api/catalog-discovery/queue?status=PENDING&q=03.03.054', headers=auth_headers)
+    assert searched.status_code == 200
+    assert searched.get_json()['discoveries'][0]['discovery_id'] == discovery_id
     pending_products = client.get('/api/admin/items?q=4006381333931', headers=auth_headers)
     assert pending_products.status_code == 200
     assert pending_products.get_json()['items'] == []

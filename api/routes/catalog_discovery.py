@@ -191,6 +191,7 @@ def _serialize_discovery(row):
         "discovery_id": row.discovery_id,
         "item_id": row.item_id,
         "sku": row.sku,
+        "product_code": row.mpn,
         "item_name": row.item_name,
         "ean": row.scanned_ean,
         "status": row.status,
@@ -227,7 +228,7 @@ def queue():
         conditions.append("d.status = :status")
         params["status"] = status
     if query:
-        conditions.append("(d.scanned_ean ILIKE :query OR i.sku ILIKE :query OR i.item_name ILIKE :query)")
+        conditions.append("(d.scanned_ean ILIKE :query OR i.sku ILIKE :query OR i.mpn ILIKE :query OR i.item_name ILIKE :query)")
         params["query"] = f"%{query}%"
     where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
     total = g.db.execute(text(f"""
@@ -241,7 +242,7 @@ def queue():
                d.created_by, d.created_at, d.reviewed_by, d.reviewed_at,
                d.tecdoc_article_id, d.tecdoc_code, d.tecdoc_brand,
                d.tecdoc_name, d.tecdoc_match_type, d.tecdoc_payload,
-               i.sku, i.item_name,
+               i.sku, i.mpn, i.item_name,
                COALESCE(SUM(inv.quantity_on_hand), 0) AS quantity_on_hand,
                COALESCE(
                    jsonb_agg(

@@ -23,7 +23,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
   const [serverForm, setServerForm] = useState(null);
   const form = workspace.drafts[draftScope] ?? serverForm;
   const [status, setStatus] = useState(discovery.status);
-  const [reference, setReference] = useState('');
+  const [reference, setReference] = useState(discovery.product_code || '');
   const [lookupReference, setLookupReference] = useState('');
   const [matches, setMatches] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -146,7 +146,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
   return <KeyboardAvoidingView style={screenStyles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScreenHeader title="Detalii produs" onBack={() => { if (!busy) navigation.goBack(); }} />
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-      <View style={styles.card}><Text style={styles.title}>{discovery.item_name}</Text><Text>EAN scanat: {discovery.ean}</Text><Text>SKU: {discovery.sku}</Text></View>
+      <View style={styles.card}><Text style={styles.title}>{discovery.item_name}</Text><Text>EAN scanat: {discovery.ean}</Text><Text>SKU: {discovery.sku}</Text>{discovery.product_code ? <Text>Cod produs: {discovery.product_code}</Text> : null}</View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!form ? error ? <CatalogButton title="Reîncearcă încărcarea" onPress={() => { setError(''); setReload(value => value + 1); }} /> : <CatalogDetailsSkeleton /> : <>
         {status === 'MATCHED' ? <Text style={styles.help}>Produsul a fost deja echivalat în TecDoc. Reîncarcă lista pentru identitatea actualizată.</Text> : <>

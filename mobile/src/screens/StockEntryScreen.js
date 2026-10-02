@@ -30,6 +30,7 @@ export default function StockEntryScreen({ navigation }) {
   const [bin, setBin] = useState(null);
   const [newBinCode, setNewBinCode] = useState('');
   const [ean, setEan] = useState('');
+  const [productCode, setProductCode] = useState('');
   const [entryKey, setEntryKey] = useState('');
   const [itemPreview, setItemPreview] = useState(null);
   const [quantity, setQuantity] = useState('1');
@@ -85,17 +86,21 @@ export default function StockEntryScreen({ navigation }) {
       return;
     }
     setEan(nextEan);
+    setProductCode('');
     setEntryKey(requestId());
     setQuantity('1');
     try {
       const response = await client.get(`/api/lookup/item/${encodeURIComponent(nextEan)}`);
-      setItemPreview(response.data?.item || null);
+      const nextItem = response.data?.item || null;
+      setItemPreview(nextItem);
+      setProductCode(String(nextItem?.mpn || nextItem?.product_code || '').trim());
     } catch (lookupError) {
       if (lookupError.response?.status === 404) {
         setItemPreview({ sku: `SCAN-${nextEan}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
         return;
       }
       setEan('');
+      setProductCode('');
       setEntryKey('');
       setItemPreview(null);
       showError(lookupError.response?.data?.error || 'Produsul nu a putut fi verificat.');
@@ -104,6 +109,7 @@ export default function StockEntryScreen({ navigation }) {
 
   function clearProduct() {
     setEan('');
+    setProductCode('');
     setEntryKey('');
     setItemPreview(null);
     setQuantity('1');
@@ -124,6 +130,7 @@ export default function StockEntryScreen({ navigation }) {
         warehouse_id: entry.warehouseId,
         bin_id: entry.binId,
         barcode: entry.ean,
+        product_code: entry.productCode,
         quantity: entry.quantity,
         // Keep the same key after a timeout/error so tapping again cannot add
         // the physical pieces twice when the first request actually committed.
@@ -134,6 +141,7 @@ export default function StockEntryScreen({ navigation }) {
         ...row,
         serverId: result.stock_entry_id,
         sku: result.item?.tecdoc_code || result.item?.sku || row.sku,
+        productCode: result.item?.product_code || result.item?.mpn || row.productCode,
         name: result.item?.tecdoc_name || result.item?.item_name || row.name,
         tecdocBrand: result.item?.tecdoc_brand || row.tecdocBrand || '',
         quantity: result.quantity_added,
@@ -162,6 +170,7 @@ export default function StockEntryScreen({ navigation }) {
       binId: bin.bin_id,
       binCode: bin.bin_code,
       ean,
+      productCode: productCode.trim(),
       sku: itemPreview.tecdoc_code || itemPreview.sku || ean,
       name: itemPreview.tecdoc_name || itemPreview.item_name || 'Produs',
       tecdocBrand: itemPreview.tecdoc_brand || '',
@@ -283,6 +292,18 @@ export default function StockEntryScreen({ navigation }) {
               </View>
             </View>
 
+            <Text style={styles.quantityLabel}>COD PRODUS (OPȚIONAL)</Text>
+            <TextInput
+              style={styles.productCodeInput}
+              value={productCode}
+              onChangeText={setProductCode}
+              placeholder="EX. ATK 03.03.054"
+              maxLength={100}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              selectTextOnFocus
+            />
+
             <Text style={styles.quantityLabel}>CANTITATE</Text>
             <View style={styles.quantityRow}>
               <TouchableOpacity style={styles.quantityButton} onPress={() => changeQuantity(-1)} disabled={quantityNumber <= 1}><Text style={styles.quantityButtonText}>−</Text></TouchableOpacity>
@@ -320,6 +341,7 @@ export default function StockEntryScreen({ navigation }) {
                 <View style={styles.sessionCopy}>
                   {entry.tecdocBrand ? <Text style={styles.sessionBrand}>{entry.tecdocBrand}</Text> : null}
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
+                  {entry.productCode ? <Text style={styles.sessionProductCode}>Cod produs: {entry.productCode}</Text> : null}
                   <Text style={styles.sessionName}>{entry.name}</Text>
                   {entry.syncing ? <Text style={styles.sessionSyncing}>Se sincronizează…</Text> : null}
                   {entry.failed ? (
@@ -384,6 +406,7 @@ const styles = StyleSheet.create({
   pendingBadge: { alignSelf: 'flex-start', color: colors.danger, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fef2f2', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, marginTop: 7, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   knownBadge: { alignSelf: 'flex-start', color: colors.success, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, marginTop: 7, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   quantityLabel: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginBottom: 6 },
+  productCodeInput: { minHeight: 52, borderWidth: 1, borderColor: colors.inputBorder, borderRadius: radii.button, color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', backgroundColor: '#fff', paddingHorizontal: 12, marginBottom: 16 },
   quantityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   quantityButton: { width: 54, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.inputBorder, backgroundColor: '#eff6ff' },
   quantityButtonText: { color: colors.accentRed, fontSize: 26 },
@@ -396,6 +419,7 @@ const styles = StyleSheet.create({
   sessionCopy: { flex: 1, minWidth: 0 },
   sessionBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   sessionSku: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
+  sessionProductCode: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', marginTop: 2 },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sessionPending: { color: colors.warning, fontSize: 10, fontWeight: '700', marginTop: 3 },
   sessionSyncing: { color: colors.accentRed, fontSize: 10, fontWeight: '700', marginTop: 3 },

@@ -38,6 +38,13 @@ describe('instant stock-entry feedback', () => {
     expect(source).toContain('FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU');
   });
 
+  it('lets the operator save an optional product code with the stock entry', () => {
+    expect(source).toContain('COD PRODUS (OPȚIONAL)');
+    expect(source).toMatch(/product_code: entry\.productCode/);
+    expect(source).toMatch(/productCode: productCode\.trim\(\)/);
+    expect(source).toContain('Cod produs: {entry.productCode}');
+  });
+
   it('can remove a synced session row and reverse its stock entry', () => {
     expect(source).toMatch(/client\.delete\(`\/api\/inventory\/stock-entry\/\$\{entry\.serverId\}`\)/);
     expect(source).toMatch(/confirmRemoveEntry\(entry\)/);
