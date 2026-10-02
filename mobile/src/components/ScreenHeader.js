@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import Text from './LocalizedText';
+import WorkspaceUndoButton from './WorkspaceUndoButton';
 import { screenStyles } from '../theme/styles';
 
 /**
@@ -18,7 +19,10 @@ export default function ScreenHeader({ title, onBack, right }) {
         <Text style={screenStyles.backText}>{'<'}</Text>
       </TouchableOpacity>
       <Text style={screenStyles.headerTitle}>{title}</Text>
-      {right || <View style={{ width: 32 }} />}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {right}
+        <WorkspaceUndoButton />
+      </View>
     </View>
   );
 }

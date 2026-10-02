@@ -1,4 +1,10 @@
-# Product review (1.48.1)
+# Product review (1.49.0)
+
+## Workspace restore and Undo
+
+- The APK and PWA save the current navigation stack, catalog filters, and unsaved manual product details per logged-in user.
+- Reopening the app restores the saved screen and draft on the same device.
+- `ANULEAZĂ` restores up to the last 100 local UI steps. Confirmed API operations remain final and are never replayed or reversed by local Undo.
 
 Open **Produse de verificat** from the APK home screen. The menu is available
 to administrators and users granted the **items** page permission in Sentry.

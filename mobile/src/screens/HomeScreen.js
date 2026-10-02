@@ -14,6 +14,7 @@ import { colors, fonts, radii, spacing } from '../theme/styles';
 import { parseWarehouseHierarchyBarcode } from '../utils/barcodes';
 import PwaStatusBanner from '../components/PwaStatusBanner';
 import Constants from 'expo-constants';
+import WorkspaceUndoButton from '../components/WorkspaceUndoButton';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.47.0';
 
@@ -261,6 +262,7 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerLogo}>SENTRY</Text>
         <View style={styles.headerRight}>
+          <WorkspaceUndoButton />
           <TouchableOpacity style={styles.warehousePill} onPress={() => setShowWarehousePicker(true)}>
             <Text style={styles.warehousePillText}>{warehouseCode || '---'}</Text>
           </TouchableOpacity>

@@ -8,6 +8,7 @@ import { screenStyles } from '../theme/styles';
 import client from '../api/client';
 import { catalogToForm, formToCatalog, CATALOG_TIMEOUT } from '../utils/catalogReview';
 import { CatalogDetailsSkeleton, CatalogPhotoSkeleton } from '../components/LoadingSkeleton';
+import { useWorkspace } from '../workspace/WorkspaceContext';
 
 const MAX_PRODUCT_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -17,7 +18,10 @@ function imageUrls(value = '') {
 
 export default function CatalogDetailsScreen({ navigation, route }) {
   const { discovery } = route.params;
-  const [form, setForm] = useState(null);
+  const draftScope = `catalog-details:${discovery.item_id}`;
+  const { workspace, ensureDraft, recordDraft, clearDraft } = useWorkspace();
+  const [serverForm, setServerForm] = useState(null);
+  const form = workspace.drafts[draftScope] ?? serverForm;
   const [status, setStatus] = useState(discovery.status);
   const [reference, setReference] = useState('');
   const [lookupReference, setLookupReference] = useState('');
@@ -33,11 +37,18 @@ export default function CatalogDetailsScreen({ navigation, route }) {
     client.get(`/api/admin/items/${discovery.item_id}/local-catalog`).then(({ data }) => {
       if (!active) return;
       setStatus(data.status);
-      setForm(catalogToForm(data.catalog));
+      const nextForm = catalogToForm(data.catalog);
+      setServerForm(nextForm);
+      ensureDraft(draftScope, nextForm);
     }).catch(err => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, [discovery.item_id, reload]);
+  }, [discovery.item_id, draftScope, ensureDraft, reload]);
 
+  function setForm(updater) {
+    const current = workspace.drafts[draftScope] ?? serverForm;
+    if (!current) return;
+    recordDraft(draftScope, typeof updater === 'function' ? updater(current) : updater);
+  }
   function update(key, value) { setForm(current => ({ ...current, [key]: value })); }
   function updateReference(index, key, value) {
     setForm(current => ({ ...current, references: current.references.map((row, i) => i === index ? { ...row, [key]: value } : row) }));
@@ -72,6 +83,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
       await client.post(`/api/catalog-discovery/queue/${discovery.discovery_id}/match`, {
         articleId: match.id, code: match.code, reference: lookupReference, confirmEquivalent: true,
       }, { timeout: CATALOG_TIMEOUT });
+      clearDraft(draftScope);
       navigation.goBack();
     });
   }
@@ -79,6 +91,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
   function save() {
     perform(async () => {
       await client.put(`/api/admin/items/${discovery.item_id}/local-catalog`, formToCatalog(form));
+      clearDraft(draftScope);
       navigation.goBack();
     });
   }

@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuth } from '../auth/AuthContext';
 import { colors } from '../theme/styles';
+import { useWorkspace } from '../workspace/WorkspaceContext';
 
 // Keep splash visible while auth state loads
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -27,17 +28,31 @@ import CatalogReviewScreen from '../screens/CatalogReviewScreen';
 import CatalogDetailsScreen from '../screens/CatalogDetailsScreen';
 
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
 
 export default function AppNavigator() {
   const { user, isLoading } = useAuth();
+  const {
+    workspace,
+    isLoading: workspaceLoading,
+    recordNavigation,
+    registerNavigationUndo,
+  } = useWorkspace();
+  const workspaceReady = useRef(false);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && (!user || !workspaceLoading)) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [isLoading]);
+  }, [isLoading, user, workspaceLoading]);
 
-  if (isLoading) {
+  useEffect(() => registerNavigationUndo(state => {
+    if (state && navigationRef.isReady()) navigationRef.resetRoot(state);
+  }), [registerNavigationUndo]);
+
+  useEffect(() => { workspaceReady.current = !workspaceLoading; }, [workspaceLoading]);
+
+  if (isLoading || (user && workspaceLoading)) {
     return null; // Splash screen stays visible
   }
 
@@ -62,7 +77,11 @@ export default function AppNavigator() {
   const forced = !!user?.must_change_password;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      initialState={user && !forced ? workspace.navigationState : undefined}
+      onStateChange={state => { if (user && workspaceReady.current) recordNavigation(state); }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           forced ? (

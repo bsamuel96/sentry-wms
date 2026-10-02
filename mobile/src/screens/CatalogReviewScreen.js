@@ -8,13 +8,17 @@ import { screenStyles } from '../theme/styles';
 import { CATALOG_TIMEOUT, matchPendingCatalog } from '../utils/catalogReview';
 import { CatalogButton, catalogStyles as styles } from '../components/CatalogForm';
 import { CatalogListSkeleton } from '../components/LoadingSkeleton';
+import { useWorkspace } from '../workspace/WorkspaceContext';
 
 export default function CatalogReviewScreen({ navigation }) {
+  const { workspace, ensureDraft, recordDraft } = useWorkspace();
+  const filterScope = 'catalog-review:filters';
+  const cachedFilters = workspace.drafts[filterScope] || { page: 1, status: 'PENDING', search: '' };
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('PENDING');
-  const [search, setSearch] = useState('');
+  const page = cachedFilters.page || 1;
+  const status = cachedFilters.status || 'PENDING';
+  const search = cachedFilters.search || '';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
@@ -23,6 +27,15 @@ export default function CatalogReviewScreen({ navigation }) {
   const stop = useRef(false);
   const busy = useRef(false);
   const requestId = useRef(0);
+
+  useEffect(() => { ensureDraft(filterScope, cachedFilters); }, [ensureDraft]);
+  function setFilters(update) {
+    const current = workspace.drafts[filterScope] || cachedFilters;
+    recordDraft(filterScope, typeof update === 'function' ? update(current) : update);
+  }
+  function setPage(update) { setFilters(current => ({ ...current, page: typeof update === 'function' ? update(current.page) : update })); }
+  function setStatus(value) { setFilters(current => ({ ...current, status: value })); }
+  function setSearch(value) { setFilters(current => ({ ...current, search: value })); }
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
