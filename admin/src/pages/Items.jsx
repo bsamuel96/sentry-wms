@@ -13,18 +13,24 @@ const FILTER_OPTIONS = [
   { label: 'All', value: 'all' },
 ];
 
-function ProductImage({ item, large = false }) {
+function ProductImage({ item, large = false, onOpen }) {
   const imageUrl = item.image_url || item.images?.[0];
   if (!imageUrl) {
     return <span className={`items-product-image-placeholder${large ? ' is-large' : ''}`} aria-label="Produs fără imagine">TECDOC</span>;
   }
-  return <img className={`items-product-image${large ? ' is-large' : ''}`} src={imageUrl} alt={`Imagine ${item.tecdoc_name || item.item_name || item.sku}`} loading="lazy" />;
+  const name = item.tecdoc_name || item.item_name || item.sku;
+  return (
+    <button type="button" className="items-product-image-button" aria-label={`Mărește imaginea pentru ${name}`}
+      title="Mărește imaginea" onClick={(event) => { event.stopPropagation(); onOpen?.({ url: imageUrl, name }); }}>
+      <img className={`items-product-image${large ? ' is-large' : ''}`} src={imageUrl} alt={`Imagine ${name}`} loading="lazy" />
+    </button>
+  );
 }
 
-function ProductIdentity({ item }) {
+function ProductIdentity({ item, onImageOpen }) {
   return (
     <div className="items-product-identity">
-      <ProductImage item={item} />
+      <ProductImage item={item} onOpen={onImageOpen} />
       <div className="items-product-copy">
         {item.tecdoc_brand ? <span className="items-product-brand">{item.tecdoc_brand}</span> : null}
         <strong>{item.tecdoc_name || item.item_name}</strong>
@@ -48,6 +54,8 @@ export default function Items() {
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({});
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [expandedImage, setExpandedImage] = useState(null);
 
   // Debounce typed search and guard against out-of-order responses.
   // Each run owns an AbortController; the cleanup cancels a pending
@@ -112,12 +120,13 @@ export default function Items() {
 
   function openEdit(item) {
     setEditId(item.id || item.item_id);
-    setForm({ ...item, id: item.id || item.item_id });
+    setForm({ ...item, id: item.id || item.item_id, local_price: String(item.local_pricing?.price ?? '') });
     setError('');
     setShowModal(true);
   }
 
   async function save() {
+    if (saving) return;
     setError('');
     const body = {
       sku: form.sku,
@@ -128,16 +137,31 @@ export default function Items() {
       weight_lbs: (form.weight_lbs || form.weight) ? Number(form.weight_lbs || form.weight) : null,
       default_bin_id: form.default_bin_id ? Number(form.default_bin_id) : null,
     };
-    const res = editId
-      ? await api.put(`/admin/items/${editId}`, body)
-      : await api.post('/admin/items', body);
-    if (res?.ok) {
-      setShowModal(false);
-      setDetail(null);
-      loadItems();
-    } else {
-      const data = await res?.json();
-      setError(data?.error || 'Failed to save');
+    if (editId && form.local_price !== String(form.local_pricing?.price ?? '')) {
+      const value = Number(form.local_price.trim().replace(',', '.'));
+      if (!Number.isFinite(value) || value < 0.01 || value > 100000000) {
+        setError('Introdu un preț între 0,01 și 100.000.000 RON.');
+        return;
+      }
+      body.local_price = form.local_price.trim().replace(',', '.');
+    }
+    setSaving(true);
+    try {
+      const res = editId
+        ? await api.put(`/admin/items/${editId}`, body)
+        : await api.post('/admin/items', body);
+      if (res?.ok) {
+        setShowModal(false);
+        setDetail(null);
+        await loadItems();
+      } else {
+        const data = await res?.json();
+        setError(data?.error || 'Produsul nu a putut fi salvat.');
+      }
+    } catch {
+      setError('Produsul nu a putut fi salvat. Verifică conexiunea și reîncearcă.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -173,7 +197,7 @@ export default function Items() {
   }
 
   const columns = [
-    { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} />, csvValue: (r) => r.tecdoc_name || r.item_name },
+    { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} onImageOpen={setExpandedImage} />, csvValue: (r) => r.tecdoc_name || r.item_name },
     { key: 'upc', label: 'EAN', mono: true, render: (r) => r.upc || '-' },
     { key: 'default_bin_code', label: 'Locație', mono: true, render: (r) => r.default_bin_code || '\u2013' },
     { key: 'local_price', label: 'Preț Local cu TVA', render: (r) => r.local_pricing?.price ? `${Number(r.local_pricing.price).toFixed(2)} RON` : 'Fără preț' },
@@ -219,7 +243,7 @@ export default function Items() {
         >
           {detail.catalog_status === 'MATCHED' || detail.tecdoc_code ? (
             <div className="items-detail-product">
-              <ProductImage item={detail} large />
+              <ProductImage item={detail} large onOpen={setExpandedImage} />
               <div>
                 <span className="items-product-brand">{detail.tecdoc_brand || (detail.catalog_status === 'MANUAL' ? 'MANUAL' : 'TECDOC')}</span>
                 <h3>{detail.tecdoc_name || detail.item_name}</h3>
@@ -268,7 +292,7 @@ export default function Items() {
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={save}>Save</button>
+                <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Se salvează…' : 'Save'}</button>
               </div>
             </div>
           }
@@ -288,6 +312,14 @@ export default function Items() {
             <label>MPN</label>
             <input className="form-input" value={form.mpn || ''} onChange={(e) => setForm({ ...form, mpn: e.target.value })} />
           </div>
+          {editId && (
+            <div className="form-group">
+              <label htmlFor="item-local-price">Preț Local cu TVA (RON)</label>
+              <input id="item-local-price" className="form-input" inputMode="decimal" placeholder="Fără preț"
+                value={form.local_price} disabled={saving}
+                onChange={event => setForm({ ...form, local_price: event.target.value })} />
+            </div>
+          )}
           <div className="form-group">
             <label>Item Name</label>
             <input className="form-input" value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
@@ -316,6 +348,14 @@ export default function Items() {
         >
           <p style={{ fontSize: 14, marginBottom: 8 }}>Are you sure? This action cannot be undone.</p>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>The item and all associated data will be permanently deleted.</p>
+        </Modal>
+      )}
+
+      {expandedImage && (
+        <Modal size="wide" title={expandedImage.name || 'Imagine produs'} onClose={() => setExpandedImage(null)}>
+          <div className="items-product-image-preview">
+            <img src={expandedImage.url} alt={`Imagine mărită ${expandedImage.name || 'produs'}`} />
+          </div>
         </Modal>
       )}
     </div>

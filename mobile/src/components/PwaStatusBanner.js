@@ -73,7 +73,7 @@ export default function PwaStatusBanner() {
   return (
     <View style={styles.banner}>
       <View style={styles.copy}>
-        <Text style={styles.title}>INSTALEAZĂ SENTRY WMS</Text>
+        <Text style={styles.title}>INSTALEAZĂ AUTOSAV WMS</Text>
         <Text style={styles.message}>
           {ios
             ? 'Pe iPhone: Partajare → Adaugă la ecranul principal.'

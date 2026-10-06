@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, ScrollView, Modal, ActivityIndicator, StyleSheet, Image } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Modal, ActivityIndicator, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles } from '../theme/styles';
+import ExpandableProductImage from '../components/ExpandableProductImage';
 
 export default function PickWalkScreen({ navigation, route }) {
   const { batch_id, batch } = route.params;
@@ -244,11 +245,10 @@ export default function PickWalkScreen({ navigation, route }) {
           >
             <View style={styles.itemCardInner}>
               {taskImageUrl ? (
-                <Image
-                  source={{ uri: taskImageUrl }}
+                <ExpandableProductImage
+                  uri={taskImageUrl}
                   style={styles.productImage}
-                  resizeMode="contain"
-                  accessibilityLabel={`Imagine ${taskName || taskCode}`}
+                  label={`Imagine ${taskName || taskCode}`}
                 />
               ) : (
                 <View style={styles.productImagePlaceholder}>
@@ -294,7 +294,7 @@ export default function PickWalkScreen({ navigation, route }) {
             <View style={styles.nextCard}>
               <View style={styles.nextProductRow}>
                 {nextTaskImageUrl ? (
-                  <Image source={{ uri: nextTaskImageUrl }} style={styles.nextProductImage} resizeMode="contain" />
+                  <ExpandableProductImage uri={nextTaskImageUrl} style={styles.nextProductImage} label={`Imagine ${nextTaskName || nextTaskCode}`} />
                 ) : null}
                 <View style={styles.nextProductCopy}>
                   <Text style={styles.nextLabel}>NEXT</Text>
@@ -416,7 +416,7 @@ export default function PickWalkScreen({ navigation, route }) {
             {task && (
               <View>
                 {taskImageUrl ? (
-                  <Image source={{ uri: taskImageUrl }} style={styles.detailImage} resizeMode="contain" />
+                  <ExpandableProductImage uri={taskImageUrl} style={styles.detailImage} label={`Imagine ${taskName || taskCode}`} />
                 ) : null}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>COD</Text>

@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CreateItemRequest(BaseModel):
@@ -29,6 +29,14 @@ class UpdateItemRequest(BaseModel):
     reorder_point: Optional[int] = Field(None, ge=0)
     reorder_qty: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
+    local_price: Optional[Decimal] = Field(None, gt=0, le=100000000)
+
+    @field_validator("local_price", mode="before")
+    @classmethod
+    def normalize_local_price(cls, value):
+        if value is None:
+            raise ValueError("Introdu un preț mai mare decât zero.")
+        return value.strip().replace(',', '.') if isinstance(value, str) else value
 
 
 class CreatePreferredBinRequest(BaseModel):

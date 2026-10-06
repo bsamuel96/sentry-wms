@@ -1,5 +1,5 @@
-const CACHE_NAME = 'sentry-wms-shell-v1';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/sentry-icon.svg', '/icons/sentry-192.png', '/icons/sentry-512.png'];
+const CACHE_NAME = 'autosav-wms-shell-v6';
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/autosav-192.png', '/icons/autosav-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

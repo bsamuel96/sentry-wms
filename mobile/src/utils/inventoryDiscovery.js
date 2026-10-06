@@ -34,5 +34,5 @@ export async function findKnownCountItem(client, barcode) {
   } catch (error) {
     if (error.response?.status !== 404) throw error;
   }
-  throw new Error('Produs necunoscut. Introdu-l mai întâi din „Locații și stoc”; echivalarea TecDoc se face ulterior în Sentry Web.');
+  throw new Error('Produs necunoscut. Introdu-l mai întâi din „Locații și stoc”; echivalarea TecDoc se face ulterior în Autosav Web.');
 }

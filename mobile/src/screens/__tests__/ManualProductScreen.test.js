@@ -26,4 +26,8 @@ describe('manual product entry', () => {
     expect(source).toMatch(/saved\.audit\?\.saved_by/);
     expect(source).toMatch(/savedAtLabel\(saved\.audit\?\.saved_at\)/);
   });
+
+  it('opens the selected product photo with the shared expandable image viewer', () => {
+    expect(source).toMatch(/<ExpandableProductImage uri=\{photo\.uri\}/);
+  });
 });

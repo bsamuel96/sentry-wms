@@ -140,7 +140,7 @@ export default function LoginScreen() {
         <PwaStatusBanner />
         <View style={styles.container}>
           <View style={styles.logoSection}>
-            <Text style={styles.logoText}>SENTRY</Text>
+            <Text style={styles.logoText}>AUTOSAV</Text>
             <Text style={styles.logoSubtext}>WAREHOUSE MANAGEMENT</Text>
           </View>
 
@@ -185,7 +185,7 @@ export default function LoginScreen() {
       <PwaStatusBanner />
       <View style={styles.container}>
         <View style={styles.logoSection}>
-          <Text style={styles.logoText}>SENTRY</Text>
+          <Text style={styles.logoText}>AUTOSAV</Text>
           <Text style={styles.logoSubtext}>WAREHOUSE MANAGEMENT</Text>
         </View>
 

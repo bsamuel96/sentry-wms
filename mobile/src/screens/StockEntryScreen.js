@@ -1,15 +1,17 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useScrollToTop } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
 import ScreenHeader from '../components/ScreenHeader';
+import ExpandableProductImage from '../components/ExpandableProductImage';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import { buttonStyles, colors, fonts, radii, screenStyles } from '../theme/styles';
 import { normalizeScannedProductCode, validScannedProductCode } from '../utils/inventoryDiscovery';
+import { stockEntryPrefill } from '../utils/stockEntryPrefill';
 
 function requestId() {
   const seed = `${Date.now()}-${Math.random()}-${Math.random()}`;
@@ -23,16 +25,19 @@ function requestId() {
   return `${random()}${random()}-${random()}-4${random().slice(1)}-a${random().slice(1)}-${time.slice(0, 4)}${tail}`;
 }
 
-export default function StockEntryScreen({ navigation }) {
+export default function StockEntryScreen({ navigation, route }) {
   const { warehouseId } = useAuth();
+  const [prefill] = useState(() => stockEntryPrefill(route?.params?.productToPlace));
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [bin, setBin] = useState(null);
   const [newBinCode, setNewBinCode] = useState('');
-  const [ean, setEan] = useState('');
-  const [productCode, setProductCode] = useState('');
-  const [entryKey, setEntryKey] = useState('');
-  const [itemPreview, setItemPreview] = useState(null);
+  const [ean, setEan] = useState(prefill?.barcode || '');
+  const [productCode, setProductCode] = useState(prefill?.code || '');
+  const [price, setPrice] = useState(prefill?.price || '');
+  const [priceChanged, setPriceChanged] = useState(false);
+  const [entryKey, setEntryKey] = useState(() => prefill ? requestId() : '');
+  const [itemPreview, setItemPreview] = useState(prefill?.item || null);
   const [quantity, setQuantity] = useState('1');
   const [registering, setRegistering] = useState(false);
   const [lastEntries, setLastEntries] = useState([]);
@@ -41,6 +46,7 @@ export default function StockEntryScreen({ navigation }) {
 
   const quantityNumber = useMemo(() => Math.max(0, Number.parseInt(quantity, 10) || 0), [quantity]);
   const hasTecDocMatch = itemPreview?.catalog_status === 'MATCHED' || Boolean(itemPreview?.tecdoc_code);
+  const isManualProduct = itemPreview?.catalog_status === 'MANUAL';
 
   async function scanBin(barcode) {
     try {
@@ -87,6 +93,8 @@ export default function StockEntryScreen({ navigation }) {
     }
     setEan(nextEan);
     setProductCode('');
+    setPrice('');
+    setPriceChanged(false);
     setEntryKey(requestId());
     setQuantity('1');
     try {
@@ -94,6 +102,8 @@ export default function StockEntryScreen({ navigation }) {
       const nextItem = response.data?.item || null;
       setItemPreview(nextItem);
       setProductCode(String(nextItem?.mpn || nextItem?.product_code || '').trim());
+      setPrice(nextItem?.local_pricing?.price == null ? '' : String(nextItem.local_pricing.price));
+      setPriceChanged(false);
     } catch (lookupError) {
       if (lookupError.response?.status === 404) {
         setItemPreview({ sku: `SCAN-${nextEan}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
@@ -101,6 +111,8 @@ export default function StockEntryScreen({ navigation }) {
       }
       setEan('');
       setProductCode('');
+      setPrice('');
+      setPriceChanged(false);
       setEntryKey('');
       setItemPreview(null);
       showError(lookupError.response?.data?.error || 'Produsul nu a putut fi verificat.');
@@ -110,6 +122,8 @@ export default function StockEntryScreen({ navigation }) {
   function clearProduct() {
     setEan('');
     setProductCode('');
+    setPrice('');
+    setPriceChanged(false);
     setEntryKey('');
     setItemPreview(null);
     setQuantity('1');
@@ -131,6 +145,7 @@ export default function StockEntryScreen({ navigation }) {
         bin_id: entry.binId,
         barcode: entry.ean,
         product_code: entry.productCode,
+        ...(entry.priceChanged ? { price: entry.price } : {}),
         quantity: entry.quantity,
         // Keep the same key after a timeout/error so tapping again cannot add
         // the physical pieces twice when the first request actually committed.
@@ -142,6 +157,7 @@ export default function StockEntryScreen({ navigation }) {
         serverId: result.stock_entry_id,
         sku: result.item?.tecdoc_code || result.item?.sku || row.sku,
         productCode: result.item?.product_code || result.item?.mpn || row.productCode,
+        price: result.item?.local_pricing?.price ?? row.price,
         name: result.item?.tecdoc_name || result.item?.item_name || row.name,
         tecdocBrand: result.item?.tecdoc_brand || row.tecdocBrand || '',
         quantity: result.quantity_added,
@@ -163,6 +179,12 @@ export default function StockEntryScreen({ navigation }) {
 
   function addToBin() {
     if (!warehouseId || !bin?.bin_id || !ean || !entryKey || !itemPreview || quantityNumber < 1) return;
+    const normalizedPrice = price.trim().replace(',', '.');
+    const priceNumber = normalizedPrice ? Number(normalizedPrice) : null;
+    if (priceChanged && normalizedPrice && (!Number.isFinite(priceNumber) || priceNumber < 0.01 || priceNumber > 100000000)) {
+      showError('Introdu un preț între 0,01 și 100.000.000 RON.');
+      return;
+    }
     const optimisticEntry = {
       id: `pending-${entryKey}`,
       entryKey,
@@ -171,6 +193,8 @@ export default function StockEntryScreen({ navigation }) {
       binCode: bin.bin_code,
       ean,
       productCode: productCode.trim(),
+      price: priceNumber,
+      priceChanged: priceChanged && priceNumber != null,
       sku: itemPreview.tecdoc_code || itemPreview.sku || ean,
       name: itemPreview.tecdoc_name || itemPreview.item_name || 'Produs',
       tecdocBrand: itemPreview.tecdoc_brand || '',
@@ -226,7 +250,7 @@ export default function StockEntryScreen({ navigation }) {
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         <View style={styles.stepHeader}>
           <View style={[styles.stepNumber, bin && styles.stepDone]}><Text style={styles.stepNumberText}>{bin ? '✓' : '1'}</Text></View>
-          <View style={styles.stepCopy}><Text style={styles.stepTitle}>Scanează locația</Text><Text style={styles.stepHint}>Locația rămâne activă pentru produsele următoare.</Text></View>
+          <View style={styles.stepCopy}><Text style={styles.stepTitle}>Alege raftul</Text><Text style={styles.stepHint}>Scanează sau introdu codul raftului. Locația rămâne activă pentru produsele următoare.</Text></View>
         </View>
 
         {bin ? (
@@ -235,7 +259,7 @@ export default function StockEntryScreen({ navigation }) {
               <Text style={styles.selectionLabel}>LOCAȚIE ACTIVĂ</Text>
               <Text style={styles.selectionValue}>{bin.bin_code}</Text>
             </View>
-            <TouchableOpacity style={styles.changeButton} onPress={() => { setBin(null); setNewBinCode(''); clearProduct(); }}>
+            <TouchableOpacity style={styles.changeButton} onPress={() => { setBin(null); setNewBinCode(''); }}>
               <Text style={styles.changeButtonText}>SCHIMBĂ</Text>
             </TouchableOpacity>
           </View>
@@ -245,7 +269,7 @@ export default function StockEntryScreen({ navigation }) {
             {newBinCode ? (
               <View style={styles.newBinCard}>
                 <Text style={styles.newBinTitle}>LOCAȚIE NOUĂ: {newBinCode}</Text>
-                <Text style={styles.newBinHint}>Locația nu există încă în Sentry. O poți crea în zona PICK și continua imediat cu produsele.</Text>
+                <Text style={styles.newBinHint}>Locația nu există încă în Autosav WMS. O poți crea în zona PICK și continua imediat cu produsele.</Text>
                 <TouchableOpacity style={[buttonStyles.buttonPrimary, registering && buttonStyles.buttonDisabled]} onPress={registerBin} disabled={registering}>
                   <Text style={buttonStyles.buttonPrimaryText}>{registering ? 'SE CREEAZĂ…' : 'ÎNREGISTREAZĂ LOCAȚIA'}</Text>
                 </TouchableOpacity>
@@ -259,7 +283,7 @@ export default function StockEntryScreen({ navigation }) {
 
         <View style={[styles.stepHeader, !bin && styles.inactive]}>
           <View style={[styles.stepNumber, ean && styles.stepDone]}><Text style={styles.stepNumberText}>{ean ? '✓' : '2'}</Text></View>
-          <View style={styles.stepCopy}><Text style={styles.stepTitle}>Scanează produsul</Text><Text style={styles.stepHint}>Cod cunoscut sau produs nou pentru echivalare ulterioară.</Text></View>
+          <View style={styles.stepCopy}><Text style={styles.stepTitle}>{ean ? 'Produs selectat' : 'Scanează produsul'}</Text><Text style={styles.stepHint}>Cod cunoscut sau produs nou pentru echivalare ulterioară.</Text></View>
         </View>
 
         {bin && !ean ? (
@@ -270,11 +294,10 @@ export default function StockEntryScreen({ navigation }) {
           <View style={styles.productCard}>
             <View style={styles.productTop}>
               {itemPreview?.image_url || itemPreview?.images?.[0] ? (
-                <Image
-                  source={{ uri: itemPreview.image_url || itemPreview.images[0] }}
+                <ExpandableProductImage
+                  uri={itemPreview.image_url || itemPreview.images[0]}
                   style={styles.productImage}
-                  resizeMode="contain"
-                  accessibilityLabel={`Imagine ${itemPreview?.item_name || itemPreview?.sku || ean}`}
+                  label={`Imagine ${itemPreview?.item_name || itemPreview?.sku || ean}`}
                 />
               ) : (
                 <View style={styles.productImagePlaceholder}>
@@ -286,7 +309,7 @@ export default function StockEntryScreen({ navigation }) {
                 <Text style={styles.productName}>{itemPreview?.tecdoc_name || itemPreview?.item_name || 'Produs'}</Text>
                 <Text style={styles.productSku}>{itemPreview?.tecdoc_code || itemPreview?.sku || ean}</Text>
                 <Text style={styles.productEan}>COD SCANAT {ean}</Text>
-                {hasTecDocMatch
+                {isManualProduct ? <Text style={styles.knownBadge}>PRODUS MANUAL SALVAT</Text> : hasTecDocMatch
                   ? <Text style={styles.knownBadge}>ECHIVALAT TECDOC</Text>
                   : <Text style={styles.pendingBadge}>FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU</Text>}
               </View>
@@ -304,6 +327,17 @@ export default function StockEntryScreen({ navigation }) {
               selectTextOnFocus
             />
 
+            <Text style={styles.quantityLabel}>PREȚ CU TVA (RON) (OPȚIONAL)</Text>
+            <TextInput
+              style={styles.productCodeInput}
+              value={price}
+              onChangeText={(value) => { setPrice(value.replace(/[^0-9.,]/g, '')); setPriceChanged(true); }}
+              placeholder="EX. 149,90"
+              keyboardType="decimal-pad"
+              maxLength={20}
+              selectTextOnFocus
+            />
+
             <Text style={styles.quantityLabel}>CANTITATE</Text>
             <View style={styles.quantityRow}>
               <TouchableOpacity style={styles.quantityButton} onPress={() => changeQuantity(-1)} disabled={quantityNumber <= 1}><Text style={styles.quantityButtonText}>−</Text></TouchableOpacity>
@@ -318,11 +352,11 @@ export default function StockEntryScreen({ navigation }) {
             </View>
 
             <TouchableOpacity
-              style={[buttonStyles.buttonPrimary, (!itemPreview || quantityNumber < 1) && buttonStyles.buttonDisabled]}
+              style={[buttonStyles.buttonPrimary, (!bin || !warehouseId || !itemPreview || quantityNumber < 1) && buttonStyles.buttonDisabled]}
               onPress={addToBin}
-              disabled={!itemPreview || quantityNumber < 1}
+              disabled={!bin || !warehouseId || !itemPreview || quantityNumber < 1}
             >
-              <Text style={buttonStyles.buttonPrimaryText}>{`ADAUGĂ ÎN ${bin?.bin_code}`}</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{bin ? `ADAUGĂ ÎN ${bin.bin_code}` : 'ALEGE MAI ÎNTÂI RAFTUL'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={clearProduct}>
               <Text style={buttonStyles.buttonSecondaryText}>ANULEAZĂ PRODUSUL</Text>
@@ -336,12 +370,13 @@ export default function StockEntryScreen({ navigation }) {
             {lastEntries.map((entry) => (
               <View key={entry.id} style={styles.sessionRow}>
                 {entry.imageUrl ? (
-                  <Image source={{ uri: entry.imageUrl }} style={styles.sessionImage} resizeMode="contain" />
+                  <ExpandableProductImage uri={entry.imageUrl} style={styles.sessionImage} label={`Imagine ${entry.name || entry.sku}`} />
                 ) : null}
                 <View style={styles.sessionCopy}>
                   {entry.tecdocBrand ? <Text style={styles.sessionBrand}>{entry.tecdocBrand}</Text> : null}
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
                   {entry.productCode ? <Text style={styles.sessionProductCode}>Cod produs: {entry.productCode}</Text> : null}
+                  {entry.price != null ? <Text style={styles.sessionPrice}>Preț: {Number(entry.price).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON cu TVA</Text> : null}
                   <Text style={styles.sessionName}>{entry.name}</Text>
                   {entry.syncing ? <Text style={styles.sessionSyncing}>Se sincronizează…</Text> : null}
                   {entry.failed ? (
@@ -420,6 +455,7 @@ const styles = StyleSheet.create({
   sessionBrand: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   sessionSku: { color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 12, fontWeight: '800' },
   sessionProductCode: { color: colors.accentRed, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', marginTop: 2 },
+  sessionPrice: { color: colors.success, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', marginTop: 2 },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sessionPending: { color: colors.warning, fontSize: 10, fontWeight: '700', marginTop: 3 },
   sessionSyncing: { color: colors.accentRed, fontSize: 10, fontWeight: '700', marginTop: 3 },

@@ -189,7 +189,7 @@ export default function CameraScannerModal({ visible, onClose, onScan }) {
               <Text style={styles.settingsHint}>
                 {isWeb
                   ? 'În Safari, deschide aA → Configurări site web → Cameră → Permite.'
-                  : 'Deschide Setări Android → Aplicații → Sentry WMS → Permisiuni → Cameră.'}
+                  : 'Deschide Setări Android → Aplicații → Autosav WMS → Permisiuni → Cameră.'}
               </Text>
             )}
           </Pressable>

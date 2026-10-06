@@ -12,6 +12,8 @@ const DEFAULT_API_URL = WEB_PRODUCTION_API_URL
   || process.env.EXPO_PUBLIC_API_URL
   || 'http://localhost:5000';
 const API_URL_KEY = 'sentry_api_url';
+const RETIRED_API_URL = 'https://sentry-wms-production.up.railway.app';
+const SELF_HOSTED_API_URL = 'https://wms.purplehive.pro';
 
 // Runtime-configurable API URL (cached in memory after first load)
 let _cachedApiUrl = null;
@@ -29,7 +31,12 @@ export async function initApiUrl() {
       return;
     }
     const stored = await AsyncStorage.getItem(API_URL_KEY).catch(() => null);
-    _cachedApiUrl = stored || DEFAULT_API_URL;
+    if (stored?.trim().replace(/\/+$/, '') === RETIRED_API_URL) {
+      _cachedApiUrl = SELF_HOSTED_API_URL;
+      await AsyncStorage.setItem(API_URL_KEY, SELF_HOSTED_API_URL).catch(() => {});
+    } else {
+      _cachedApiUrl = stored || DEFAULT_API_URL;
+    }
   })();
   return _initPromise;
 }
@@ -57,8 +64,7 @@ export async function setApiUrl(url) {
 
 /** Get the current API URL (for display in settings). */
 export async function getStoredApiUrl() {
-  if (WEB_PRODUCTION_API_URL) return WEB_PRODUCTION_API_URL;
-  return (await AsyncStorage.getItem(API_URL_KEY).catch(() => null)) || DEFAULT_API_URL;
+  return getApiUrl();
 }
 
 /** True if the user has explicitly saved a server URL. */

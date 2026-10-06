@@ -25,7 +25,7 @@ describe('instant stock-entry feedback', () => {
 
   it('shows TecDoc product images in the active card and session history', () => {
     expect(source).toMatch(/itemPreview\.image_url \|\| itemPreview\.images\[0\]/);
-    expect(source).toMatch(/accessibilityLabel=\{`Imagine/);
+    expect(source).toMatch(/<ExpandableProductImage/);
     expect(source).toMatch(/entry\.imageUrl/);
   });
 
@@ -43,6 +43,14 @@ describe('instant stock-entry feedback', () => {
     expect(source).toMatch(/product_code: entry\.productCode/);
     expect(source).toMatch(/productCode: productCode\.trim\(\)/);
     expect(source).toContain('Cod produs: {entry.productCode}');
+  });
+
+  it('lets the operator save a VAT-inclusive price with the stock entry', () => {
+    expect(source).toContain('PREȚ CU TVA (RON) (OPȚIONAL)');
+    expect(source).toMatch(/price: entry\.price/);
+    expect(source).toMatch(/priceChanged: priceChanged && priceNumber != null/);
+    expect(source).toMatch(/result\.item\?\.local_pricing\?\.price/);
+    expect(source).toContain('Preț: {Number(entry.price).toLocaleString');
   });
 
   it('can remove a synced session row and reverse its stock entry', () => {

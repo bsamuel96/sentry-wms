@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Text from '../components/LocalizedText';
 import ScreenHeader from '../components/ScreenHeader';
@@ -8,6 +8,7 @@ import { CatalogButton, CatalogField, catalogStyles as styles } from '../compone
 import { screenStyles } from '../theme/styles';
 import client from '../api/client';
 import { useWorkspace } from '../workspace/WorkspaceContext';
+import ExpandableProductImage from '../components/ExpandableProductImage';
 
 const MAX_PRODUCT_IMAGE_BYTES = 4 * 1024 * 1024;
 const EMPTY_FORM = Object.freeze({
@@ -124,6 +125,8 @@ export default function ManualProductScreen({ navigation }) {
         <Text>Preț: {Number(saved.pricing?.price || 0).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON cu TVA</Text>
         <Text style={styles.help}>Salvat de {saved.audit?.saved_by || 'utilizatorul curent'} la {savedAtLabel(saved.audit?.saved_at)}</Text>
         <Text style={styles.help}>Produsul poate fi găsit acum în AutoSav prin scanarea acestui EAN.</Text>
+        <Text style={styles.help}>Pentru a-l introduce în stoc, alege raftul și cantitatea.</Text>
+        <CatalogButton title="Așază pe raft" onPress={() => navigation.push('StockEntry', { productToPlace: saved })} />
         <CatalogButton title="Adaugă alt produs" onPress={addAnother} />
         <CatalogButton secondary title="Înapoi la meniu" onPress={() => navigation.goBack()} />
       </View> : <>
@@ -144,7 +147,7 @@ export default function ManualProductScreen({ navigation }) {
             <CatalogButton secondary title="Upload" disabled={busy} onPress={() => pickProductImage('library')} />
           </View>
           {photo ? <View style={styles.imageCard}>
-            <Image source={{ uri: photo.uri }} accessibilityLabel="Poză produs selectată" style={styles.productImage} resizeMode="contain" />
+            <ExpandableProductImage uri={photo.uri} label="Poză produs selectată" style={styles.productImage} />
             <CatalogButton secondary title="Elimină poza" disabled={busy} onPress={() => setPhoto(null)} />
           </View> : <Text style={styles.help}>Poți fotografia produsul sau alege o imagine din telefon.</Text>}
         </View>

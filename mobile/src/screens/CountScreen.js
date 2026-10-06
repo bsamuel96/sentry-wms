@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
-import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet, Image } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Vibration, BackHandler, StyleSheet } from 'react-native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ModeSelector from '../components/ModeSelector';
 import { addDiscoveredCountItem, findKnownCountItem } from '../utils/inventoryDiscovery';
@@ -12,6 +12,7 @@ import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import ExpandableProductImage from '../components/ExpandableProductImage';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, doneStyles } from '../theme/styles';
 
 const MODE_KEY = 'sentry_count_mode';
@@ -255,11 +256,10 @@ export default function CountScreen({ navigation }) {
                   style={[listStyles.row, hasVariance && styles.lineVariance, line.unexpected && styles.lineUnexpected]}
                 >
                   {imageUrl ? (
-                    <Image
-                      source={{ uri: imageUrl }}
+                    <ExpandableProductImage
+                      uri={imageUrl}
                       style={styles.productImage}
-                      resizeMode="contain"
-                      accessibilityLabel={`Imagine ${productName || productCode}`}
+                      label={`Imagine ${productName || productCode}`}
                     />
                   ) : (
                     <View style={styles.productImagePlaceholder}>

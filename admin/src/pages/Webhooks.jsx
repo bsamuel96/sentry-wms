@@ -1284,12 +1284,11 @@ export default function Webhooks() {
               className="form-input"
               value={form.delivery_url}
               onChange={(e) => setForm({ ...form, delivery_url: e.target.value })}
-              placeholder="https://example.com/webhooks/sentry"
+              placeholder="https://example.com/webhooks/wms"
             />
             {httpAttempt && (
               <div className="form-error" style={{ marginTop: 4, fontSize: 12 }}>
-                http:// is rejected in production. Use https:// or set
-                SENTRY_ALLOW_HTTP_WEBHOOKS=true in dev / CI.
+                http:// is rejected in production. Use an https:// address.
               </div>
             )}
           </div>
@@ -1406,7 +1405,7 @@ export default function Webhooks() {
           <p style={{ fontSize: 13, fontWeight: 600 }}>
             {reveal.display_name}: this secret (generation {reveal.secret_generation})
             is shown exactly once. Copy it to the consumer's HMAC verifier
-            now. Sentry stores only the encrypted form; if you lose this
+            now. Autosav WMS stores only the encrypted form; if you lose this
             value you must rotate.
           </p>
           <div style={{
@@ -1481,8 +1480,7 @@ export default function Webhooks() {
             />
             {editHttpAttempt && (
               <div className="form-error" style={{ marginTop: 4, fontSize: 12 }}>
-                http:// is rejected in production. Use https:// or set
-                SENTRY_ALLOW_HTTP_WEBHOOKS=true in dev / CI.
+                http:// is rejected in production. Use an https:// address.
               </div>
             )}
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>

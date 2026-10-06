@@ -19,7 +19,7 @@ const TEXT = {
   'Picking Batches': 'Loturi de colectare',
   Warehouse: 'Depozit',
   Items: 'Produse',
-  'TecDoc Matching': 'Echivalare TecDoc',
+  'TecDoc Matching': 'Produse neechivalate',
   Vendors: 'Furnizori',
   'Inventory Adjustments': 'Ajustări de stoc',
   'Inventory Transfers': 'Transferuri de stoc',

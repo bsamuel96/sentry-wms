@@ -21,7 +21,7 @@ describe('manual catalogue product photos', () => {
   });
 
   it('previews and removes selected product images before manual save', () => {
-    expect(source).toMatch(/<Image source=\{\{ uri: imageUrl \}\}/);
+    expect(source).toMatch(/<ExpandableProductImage uri=\{imageUrl\}/);
     expect(source).toMatch(/removeImage\(imageUrl\)/);
     expect(source).toMatch(/maximum 10/);
   });

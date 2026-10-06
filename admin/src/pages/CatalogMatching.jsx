@@ -55,11 +55,14 @@ export default function CatalogMatching() {
   const [allRunning, setAllRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const stopAll = useRef(false);
+  const queueRequest = useRef(0);
+  const confirmation = useRef(null);
   const [error, setError] = useState('');
   const [matchError, setMatchError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => () => { stopAll.current = true; }, []);
+  useEffect(() => () => { stopAll.current = true; queueRequest.current += 1; }, []);
+  useEffect(() => { if (success) confirmation.current?.scrollIntoView?.({ block: 'nearest' }); }, [success]);
 
   async function bulkMatchAll() {
     if (bulkLoading || connexBulkLoading) return;
@@ -100,6 +103,7 @@ export default function CatalogMatching() {
   }
 
   async function loadQueue(signal, preserveError = false) {
+    const requestId = ++queueRequest.current;
     setLoading(true);
     if (!preserveError) setError('');
     try {
@@ -111,12 +115,14 @@ export default function CatalogMatching() {
         throw new Error(payload?.error || 'Coada nu a putut fi încărcată.');
       }
       const payload = await response.json();
+      if (requestId !== queueRequest.current) return;
+      if (page > Math.max(1, payload.pages || 1)) { setPage(Math.max(1, payload.pages || 1)); return; }
       setRows(payload.discoveries || []);
       setPagination({ page: payload.page, pages: payload.pages, total: payload.total });
     } catch (loadError) {
-      if (loadError?.name !== 'AbortError') setError(loadError.message || 'Coada nu a putut fi încărcată.');
+      if (requestId === queueRequest.current && loadError?.name !== 'AbortError') setError(loadError.message || 'Coada nu a putut fi încărcată.');
     } finally {
-      setLoading(false);
+      if (requestId === queueRequest.current) setLoading(false);
     }
   }
 
@@ -276,6 +282,27 @@ export default function CatalogMatching() {
     } finally {
       setSavingId('');
     }
+  }
+
+  function handleCatalogSaved(saved) {
+    if (!saved?.catalog || !selected) { void loadQueue(undefined, true); return; }
+    const discoveryId = Number(selected.discovery_id);
+    const update = row => ({ ...row, status: saved.status, item_name: saved.catalog.name || row.item_name,
+      tecdoc_code: saved.catalog.code, tecdoc_brand: saved.catalog.brand, tecdoc_name: saved.catalog.name });
+    if (saved.completed) {
+      // Invalidate any older list request before removing the completed row.
+      queueRequest.current += 1;
+      setRows(current => status === 'PENDING'
+        ? current.filter(row => Number(row.discovery_id) !== discoveryId)
+        : current.map(row => Number(row.discovery_id) === discoveryId ? update(row) : row));
+      setSelectedIds(current => { const next = new Set(current); next.delete(discoveryId); return next; });
+      setSelected(null);
+      setSuccess(`${saved.catalog.name}: produs complet, salvat și scos din lista de produse neechivalate.`);
+    } else {
+      setSelected(current => current ? update(current) : current);
+      setRows(current => current.map(row => Number(row.discovery_id) === discoveryId ? update(row) : row));
+    }
+    void loadQueue(undefined, true);
   }
 
   async function ignoreSelected() {
@@ -446,7 +473,7 @@ export default function CatalogMatching() {
 
   return (
     <div>
-      <PageHeader title="Echivalare produse" />
+      <PageHeader title="Produse neechivalate" />
       <p style={{ margin: '-8px 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
         Caută produsele după EAN în TecDoc sau Connex. Un singur rezultat exact se salvează automat; rezultatele multiple cer alegerea ta.
       </p>
@@ -479,10 +506,10 @@ export default function CatalogMatching() {
         <div>{allProgress.matched} echivalate · {allProgress.not_found} fără potrivire · {allProgress.ambiguous} necesită alegere · {allProgress.skipped} omise · {allProgress.failed} erori</div>
       </div>}
       {success ? (
-        <div className="alert alert-success" role="status">
+        <div ref={confirmation} className="alert alert-success" role="status">
           {success}{' '}
           <button type="button" className="btn btn-sm" onClick={() => { resetBulkSelection(); setStatus('ALL'); setPage(1); setSuccess(''); }}>
-            Vezi echivalatele
+            Vezi produsele salvate
           </button>
         </div>
       ) : null}
@@ -540,7 +567,7 @@ export default function CatalogMatching() {
         >
           <div className="detail-grid" style={{ marginBottom: 18 }}>
             <span className="detail-label">Cod scanat</span><span className="mono">{selected.ean}</span>
-            <span className="detail-label">Produs Sentry</span><span>{selected.item_name}</span>
+            <span className="detail-label">Produs Autosav</span><span>{selected.item_name}</span>
             <span className="detail-label">Stoc</span><span>{selected.quantity_on_hand} buc.</span>
             <span className="detail-label">Locații</span><span>{(selected.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—'}</span>
             <span className="detail-label">Stare</span><span>{statusLabel(selected)}</span>
@@ -557,7 +584,7 @@ export default function CatalogMatching() {
                 <button type="button" className="btn btn-primary" onClick={() => findMatches()} disabled={matchLoading || (!reference.trim() && !canSearchScannedCodeInTecDoc(selected.ean))}>{matchLoading ? 'Se caută…' : 'Caută în TecDoc'}</button>
                 <button type="button" className="btn btn-primary" onClick={() => findConnexMatches()} disabled={connexLoading || !canSearchScannedCodeInTecDoc(selected.ean)}>{connexLoading ? 'Se caută în Connex…' : 'Caută în Connex după EAN'}</button>
               </div>
-              {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Sentry. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
+              {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Autosav WMS. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
               {matchError ? <div className="alert alert-error" role="alert">{matchError}</div> : null}
               {!matchLoading && !matchError && matches.length === 0 ? (
                 <div className="alert alert-error" role="status">
@@ -592,7 +619,7 @@ export default function CatalogMatching() {
               </div>
             </>
           ) : null}
-          <LocalCatalogPanel key={selected.item_id} itemId={selected.item_id} onSaved={(saved) => { if (saved?.status) setSelected(current => ({ ...current, status: saved.status, item_name: saved.catalog.name, tecdoc_code: saved.catalog.code, tecdoc_brand: saved.catalog.brand, tecdoc_name: saved.catalog.name })); loadQueue(); }} />
+          <LocalCatalogPanel key={selected.item_id} itemId={selected.item_id} onSaved={handleCatalogSaved} />
         </Modal>
       ) : null}
     </div>

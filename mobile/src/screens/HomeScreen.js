@@ -261,7 +261,7 @@ export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.headerLogo}>SENTRY</Text>
+        <Text style={styles.headerLogo}>AUTOSAV</Text>
         <View style={styles.headerRight}>
           <WorkspaceUndoButton />
           <TouchableOpacity style={styles.warehousePill} onPress={() => setShowWarehousePicker(true)}>

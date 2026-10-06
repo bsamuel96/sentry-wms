@@ -1,0 +1,16 @@
+**/node_modules
+**/.git
+**/.env
+**/.env.*
+**/.local-secrets
+**/dist
+**/build
+**/coverage
+**/__pycache__
+**/.expo
+**/.venv
+**/venv
+**/*.test.*
+**/__tests__
+api/
+db/

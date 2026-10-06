@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Text from '../components/LocalizedText';
 import ScreenHeader from '../components/ScreenHeader';
@@ -8,6 +8,7 @@ import { screenStyles } from '../theme/styles';
 import client from '../api/client';
 import { catalogToForm, formToCatalog, CATALOG_TIMEOUT } from '../utils/catalogReview';
 import { CatalogDetailsSkeleton, CatalogPhotoSkeleton } from '../components/LoadingSkeleton';
+import ExpandableProductImage from '../components/ExpandableProductImage';
 import { useWorkspace } from '../workspace/WorkspaceContext';
 
 const MAX_PRODUCT_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -179,7 +180,7 @@ export default function CatalogDetailsScreen({ navigation, route }) {
             {uploadingImage || imageUrls(form.images).length ? <View style={styles.imageGrid}>
               {uploadingImage ? <CatalogPhotoSkeleton /> : null}
               {imageUrls(form.images).map((imageUrl, index) => <View key={imageUrl} style={styles.imageCard}>
-                <Image source={{ uri: imageUrl }} accessibilityLabel={`Imagine produs ${index + 1}`} style={styles.productImage} resizeMode="contain" />
+                <ExpandableProductImage uri={imageUrl} label={`Imagine produs ${index + 1}`} style={styles.productImage} />
                 <CatalogButton secondary title={`Șterge imaginea ${index + 1}`} disabled={busy} onPress={() => removeImage(imageUrl)} />
               </View>)}
             </View> : <Text style={styles.help}>Fotografiază produsul sau alege o imagine din telefon.</Text>}

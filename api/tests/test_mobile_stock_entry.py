@@ -27,6 +27,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
         "bin_id": bin_id,
         "barcode": "1654644071",
         "product_code": "ATK 03.03.054",
+        "price": "129,90",
         "quantity": 4,
         "idempotency_key": key,
     }
@@ -39,6 +40,8 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
     assert payload["catalog_status"] == "PENDING"
     assert payload["created_provisional_item"] is True
     assert payload["item"]["product_code"] == "ATK 03.03.054"
+    assert payload["item"]["local_pricing"]["price"] == 129.9
+    assert payload["item"]["local_pricing"]["source"] == "manual"
 
     replay = client.post("/api/inventory/stock-entry", headers=auth_headers, json=body)
     assert replay.status_code == 200
@@ -53,6 +56,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
         (item_id,),
     ) == [("1654644071", "PENDING")]
     assert query("SELECT mpn FROM items WHERE item_id=%s", (item_id,)) == [("ATK 03.03.054",)]
+    assert query("SELECT local_pricing->>'price' FROM items WHERE item_id=%s", (item_id,)) == [("129.9",)]
 
 
 def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
@@ -62,11 +66,16 @@ def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
         "INSERT INTO items(sku,item_name,upc,external_id) VALUES(%s,%s,%s,%s) RETURNING item_id",
         (f"KNOWN-{uuid.uuid4().hex[:8]}", "Produs cunoscut", "5901234123457", external_id),
     )[0][0]
+    query(
+        "UPDATE items SET local_pricing=%s::jsonb WHERE item_id=%s",
+        ('{"source":"connex","price":100,"connex":{"id":"123","price":100}}', item_id),
+    )
     response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
         "warehouse_id": warehouse_id,
         "bin_id": bin_id,
         "ean": "5901234123457",
         "product_code": "REF-KNOWN-42",
+        "price": "155,50",
         "quantity": 2,
         "idempotency_key": str(uuid.uuid4()),
     })
@@ -74,6 +83,8 @@ def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
     assert response.get_json()["created_provisional_item"] is False
     assert response.get_json()["catalog_status"] == "KNOWN"
     assert response.get_json()["item"]["product_code"] == "REF-KNOWN-42"
+    assert response.get_json()["item"]["local_pricing"]["price"] == 155.5
+    assert response.get_json()["item"]["local_pricing"]["connex"]["id"] == "123"
     assert query("SELECT mpn FROM items WHERE item_id=%s", (item_id,)) == [("REF-KNOWN-42",)]
     assert query("SELECT 1 FROM item_catalog_discoveries WHERE item_id=%s", (item_id,)) == []
 
@@ -160,3 +171,18 @@ def test_stock_entry_rejects_overlong_product_reference(client, auth_headers):
         "idempotency_key": str(uuid.uuid4()),
     })
     assert response.status_code == 422
+
+
+def test_stock_entry_rejects_invalid_price_without_creating_stock(client, auth_headers):
+    bin_id, warehouse_id, _ = first_bin()
+    barcode = f"PRICE-{uuid.uuid4().hex[:8]}"
+    response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
+        "warehouse_id": warehouse_id,
+        "bin_id": bin_id,
+        "barcode": barcode,
+        "price": "0.001",
+        "quantity": 1,
+        "idempotency_key": str(uuid.uuid4()),
+    })
+    assert response.status_code == 422
+    assert query("SELECT 1 FROM items WHERE upc=%s", (barcode,)) == []

@@ -30,6 +30,13 @@ map $http_x_forwarded_proto $admin_hsts_header {
     default $admin_scheme_hsts;
 }
 
+# Preserve HTTPS terminated by the trusted upstream proxy/tunnel, so the
+# API issues Secure authentication cookies even though this hop is HTTP.
+map $http_x_forwarded_proto $admin_forwarded_proto {
+    "https" "https";
+    default $scheme;
+}
+
 server {
     listen 8080;
     server_name _;
@@ -43,7 +50,7 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     # V-110: fonts self-hosted; style-src and font-src drop their Google origins.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
     add_header Strict-Transport-Security $admin_hsts_header always;
 
     # Block any attempt to reach Vite dev-server paths that legacy
@@ -55,13 +62,19 @@ server {
     # Proxy API traffic to the Flask container. URL + Host filled at
     # container start by envsubst (see comments at top).
     location /api/ {
-        proxy_pass ${API_UPSTREAM_URL};
+        # Product photos accept 4 MiB plus the multipart form envelope.
+        client_max_body_size 5m;
+        # Docker container IPs change after a redeploy. Resolve the service
+        # name at request time so nginx never keeps a stale API address.
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $api_upstream ${API_UPSTREAM_URL};
+        proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host ${API_UPSTREAM_HOST};
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $admin_forwarded_proto;
         # Kept above the gunicorn --timeout (180s, see api/Dockerfile) so
         # nginx never severs a backend still finishing a large write
         # (e.g. a 300+ line cycle-count approval).
@@ -73,6 +86,11 @@ server {
         # These are no-ops for an http:// upstream.
         proxy_ssl_server_name on;
         proxy_ssl_name ${API_UPSTREAM_HOST};
+    }
+
+    location = /sw.js {
+        expires -1;
+        try_files $uri =404;
     }
 
     # Hashed build assets can be cached aggressively.

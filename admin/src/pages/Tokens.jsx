@@ -600,7 +600,7 @@ export default function Tokens() {
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
             {reveal.token_name}: this value is shown exactly once. Copy it to
-            your connector's configuration now. Sentry stores only the hash;
+            your connector's configuration now. Autosav WMS stores only the hash;
             if you lose this value you must rotate.
           </p>
           <div style={{

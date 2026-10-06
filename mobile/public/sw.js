@@ -1,12 +1,12 @@
-const CACHE_NAME = 'sentry-wms-mobile-shell-v1';
+const CACHE_NAME = 'autosav-wms-mobile-shell-v3';
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
 const scoped = (path) => `${BASE_PATH}${path}`;
 const SHELL = [
   scoped('/offline.html'),
   scoped('/manifest.webmanifest'),
-  scoped('/icons/sentry-192.png'),
-  scoped('/icons/sentry-512.png'),
-  scoped('/icons/sentry-maskable.svg'),
+  scoped('/icons/autosav-192.png'),
+  scoped('/icons/autosav-512.png'),
+  scoped('/icons/autosav-maskable.svg'),
 ];
 
 self.addEventListener('install', (event) => {

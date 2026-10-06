@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from services.local_catalog import update_pricing, validate_catalog, positive_price
+from services.local_catalog import update_pricing, validate_catalog, positive_price, catalog_review_status
 
 
 class LocalCatalogTests(unittest.TestCase):
@@ -44,6 +44,23 @@ class LocalCatalogTests(unittest.TestCase):
         for patch in [{'name': ''}, {'images': ['javascript:alert(1)']}, {'references': [{'code': ''}]}, {'category': 'x' * 101}]:
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 validate_catalog({'name': 'Filtru', 'brand': 'Marca', 'code': 'ABC', **patch})
+
+    def test_drafts_allow_missing_identity_but_completion_requires_it(self):
+        draft = validate_catalog({'name': 'Produs început'}, require_complete=False)
+        self.assertEqual(draft['brand'], '')
+        with self.assertRaises(ValueError):
+            validate_catalog(draft)
+        with self.assertRaises(ValueError):
+            validate_catalog({'images': ['javascript:bad']}, require_complete=False)
+
+    def test_only_explicit_completion_removes_pending_review(self):
+        self.assertEqual(catalog_review_status('PENDING', False), 'PENDING')
+        self.assertEqual(catalog_review_status(None, False), 'PENDING')
+        self.assertEqual(catalog_review_status('PENDING', True), 'MANUAL')
+        self.assertEqual(catalog_review_status('MANUAL', False), 'MANUAL')
+        for invalid in ['false', 0, None]:
+            with self.assertRaises(ValueError):
+                catalog_review_status('PENDING', invalid)
 
 
 if __name__ == '__main__':

@@ -216,7 +216,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     <div className="stock-entry-page">
       <PageHeader title="Introducere marfă prin scanare" />
       <p className="stock-entry-intro">
-        Scanează locația, apoi produsele de pe raft. Codurile necunoscute sunt salvate imediat și apar în „Echivalare TecDoc” pentru identificare ulterioară.
+        Scanează locația, apoi produsele de pe raft. Codurile necunoscute sunt salvate imediat și apar în „Produse neechivalate” pentru identificare ulterioară.
       </p>
 
       {!warehouseId ? <div className="alert alert-error" role="alert">Selectează un depozit din bara de sus.</div> : null}

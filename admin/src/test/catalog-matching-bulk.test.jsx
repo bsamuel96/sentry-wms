@@ -2,13 +2,14 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const { get, post, del } = vi.hoisted(() => ({
+const { get, post, del, put } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   del: vi.fn(),
+  put: vi.fn(),
 }));
 
-vi.mock('../api.js', () => ({ api: { get, post, delete: del } }));
+vi.mock('../api.js', () => ({ api: { get, post, put, delete: del } }));
 
 import CatalogMatching from '../pages/CatalogMatching.jsx';
 
@@ -45,6 +46,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     get.mockReset();
     post.mockReset();
     del.mockReset();
+    put.mockReset();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -170,7 +172,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
 
     expect(await screen.findByText('4006381333931 a fost identificat și salvat direct ca produs TecDoc DOLZ C113.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Vezi echivalatele' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vezi produsele salvate' })).toBeInTheDocument();
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/match', {
       articleId: '123', code: 'C113', reference: '', confirmEquivalent: false,
     }));
@@ -219,4 +221,30 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     }));
     expect(await screen.findByText('4006381333931 a fost echivalat prin Connex cu ATK AUTOTECHNIK ATK 03.03.054.')).toBeInTheDocument();
   });
+  it('keeps saved drafts in the list, then confirms completion and removes only the finished row', async () => {
+    const catalog = { name: 'Produs manual', brand: 'Marca', code: 'ABC', images: [], eans: [] };
+    const row = { ...discovery, ean: 'LOCAL-ABC' };
+    let completed = false;
+    get.mockImplementation(async path => jsonResponse(path.includes('/local-catalog')
+      ? { status: 'PENDING', catalog, pricing: {} }
+      : page(completed ? [] : [row])));
+    put.mockImplementation(async (_, body) => {
+      completed = body.complete;
+      return jsonResponse({ status: completed ? 'MANUAL' : 'PENDING', catalog, pricing: {}, completed,
+        message: completed ? 'Produs complet.' : 'Date salvate, produsul rămâne în listă.' });
+    });
+    render(<CatalogMatching />);
+    expect(screen.getByRole('heading', { name: 'Produse neechivalate' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Compară TecDoc' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvează datele produsului' }));
+    expect(await screen.findByText('Date salvate, produsul rămâne în listă.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(put.mock.calls[0][1].complete).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Salvează și scoate din listă' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText(/Produs manual: produs complet, salvat și scos/)).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /LOCAL-ABC/ })).not.toBeInTheDocument();
+    expect(put.mock.calls[1][1].complete).toBe(true);
+  });
+
 });

@@ -42,13 +42,19 @@ def update_pricing(current, action, *, price=None, quote=None, reference=None, a
     return result
 
 
-def validate_catalog(body):
+def catalog_review_status(current_status, complete):
+    if not isinstance(complete, bool):
+        raise ValueError('Acțiunea de finalizare trebuie să fie true sau false.')
+    return 'MANUAL' if complete else (current_status or 'PENDING')
+
+
+def validate_catalog(body, *, require_complete=True):
     if not isinstance(body, dict):
         raise ValueError('Date de produs invalide.')
     result = {'matchType': 'manual'}
     for field, limit in [('name', 200), ('code', 64), ('brand', 200), ('category', 100), ('description', 1000)]:
         value = str(body.get(field) or '').strip()
-        if len(value) > limit or (field in ('name', 'code', 'brand') and not value):
+        if len(value) > limit or (require_complete and field in ('name', 'code', 'brand') and not value):
             raise ValueError(f'Câmpul {field} este obligatoriu sau prea lung (maximum {limit}).')
         result[field] = value
     for field, limit in [('eans', 50), ('images', 10)]:

@@ -1,0 +1,243 @@
+# Standalone WMS. Cloudflare tunnel points to 127.0.0.1:3003.
+# API bootstraps the empty database once; all state is in persistent volumes.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-sentry}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql
+  api:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sentry}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      FLASK_ENV: production
+      FLASK_PORT: 5000
+      TRUST_PROXY: 'true'
+      API_BIND_HOST: 127.0.0.1
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://pos.digitalromanian.com,https://wms.purplehive.pro}
+      SENTRY_ENCRYPTION_KEY: ${SENTRY_ENCRYPTION_KEY:?Set SENTRY_ENCRYPTION_KEY in .env}
+      SENTRY_TOKEN_PEPPER: ${SENTRY_TOKEN_PEPPER:?Set SENTRY_TOKEN_PEPPER in .env}
+      SENTRY_PUBSUB_HMAC_KEY: ${SENTRY_PUBSUB_HMAC_KEY:?Set SENTRY_PUBSUB_HMAC_KEY in .env}
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      SENTRY_INBOUND_MAPPINGS_DIR: /app/db/mappings
+      AUTOSAV_CATALOG_API_URL: ${AUTOSAV_CATALOG_API_URL:-}
+      AUTOSAV_CATALOG_BRIDGE_KEY: ${AUTOSAV_CATALOG_BRIDGE_KEY:-}
+      DISPATCHER_ENABLED: ${DISPATCHER_ENABLED:-false}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    image: ${WMS_API_IMAGE:-sentry-wms-api:coolify}
+    expose:
+      - '5000'
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - '-c'
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    command:
+      - sh
+      - '-c'
+      - python bootstrap_coolify.py && exec gunicorn -w 4 --timeout 180 -b 0.0.0.0:5000 'app:create_app()'
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - '--requirepass'
+      - ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env -- see .env.example}
+      - '--appendonly'
+      - 'yes'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redisdata:/data
+  snapshot-keeper:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    command: python -m services.snapshot_keeper
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sentry}
+      SNAPSHOT_KEEPER_DATABASE_URL: ${SNAPSHOT_KEEPER_DATABASE_URL:-}
+      SNAPSHOT_KEEPER_HEARTBEAT_FILE: /tmp/snapshot-keeper-heartbeat
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - find /tmp/snapshot-keeper-heartbeat -newermt '-30 seconds' -print -quit | grep -q .
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    image: ${WMS_API_IMAGE:-sentry-wms-api:coolify}
+  webhook-dispatcher:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    command: python -m services.webhook_dispatcher
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sentry}
+      DISPATCHER_DATABASE_URL: ${DISPATCHER_DATABASE_URL:-}
+      SENTRY_ENCRYPTION_KEY: ${SENTRY_ENCRYPTION_KEY:?Set SENTRY_ENCRYPTION_KEY in .env}
+      SENTRY_PUBSUB_HMAC_KEY: ${SENTRY_PUBSUB_HMAC_KEY:?Set SENTRY_PUBSUB_HMAC_KEY in .env}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      DISPATCHER_HEARTBEAT_FILE: /tmp/webhook-dispatcher-heartbeat
+      DISPATCHER_ENABLED: ${DISPATCHER_ENABLED:-false}
+      DISPATCHER_HTTP_TIMEOUT_MS: ${DISPATCHER_HTTP_TIMEOUT_MS:-10000}
+      DISPATCHER_HTTP_CONNECT_TIMEOUT_MS: ${DISPATCHER_HTTP_CONNECT_TIMEOUT_MS:-5000}
+      DISPATCHER_HTTP_READ_TIMEOUT_MS: ${DISPATCHER_HTTP_READ_TIMEOUT_MS:-8000}
+      DISPATCHER_FALLBACK_POLL_MS: ${DISPATCHER_FALLBACK_POLL_MS:-2000}
+      DISPATCHER_SHUTDOWN_DRAIN_S: ${DISPATCHER_SHUTDOWN_DRAIN_S:-30}
+      DISPATCHER_MAX_CONCURRENT_POSTS: ${DISPATCHER_MAX_CONCURRENT_POSTS:-16}
+      DISPATCHER_MAX_PENDING_HARD_CAP: ${DISPATCHER_MAX_PENDING_HARD_CAP:-50000}
+      DISPATCHER_MAX_DLQ_HARD_CAP: ${DISPATCHER_MAX_DLQ_HARD_CAP:-5000}
+      SENTRY_ALLOW_HTTP_WEBHOOKS: ${SENTRY_ALLOW_HTTP_WEBHOOKS:-false}
+      SENTRY_ALLOW_INTERNAL_WEBHOOKS: ${SENTRY_ALLOW_INTERNAL_WEBHOOKS:-false}
+      FLASK_ENV: production
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - '-m'
+        - services.webhook_dispatcher.healthcheck
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    image: ${WMS_API_IMAGE:-sentry-wms-api:coolify}
+    profiles:
+      - workers
+  connector-publisher:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    command: python -m services.connector_publisher
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sentry}
+      PUBLISHER_DATABASE_URL: ${PUBLISHER_DATABASE_URL:-}
+      CONNECTOR_PUBLISHER_HEARTBEAT_FILE: /tmp/connector-publisher-heartbeat
+      CONNECTOR_PUBLISHER_ENABLED: ${CONNECTOR_PUBLISHER_ENABLED:-false}
+      CONNECTOR_PUBLISHER_FALLBACK_POLL_MS: ${CONNECTOR_PUBLISHER_FALLBACK_POLL_MS:-2000}
+      CONNECTOR_PUBLISHER_RECONCILE_INTERVAL_S: ${CONNECTOR_PUBLISHER_RECONCILE_INTERVAL_S:-60}
+      CONNECTOR_PUBLISHER_SHUTDOWN_DRAIN_S: ${CONNECTOR_PUBLISHER_SHUTDOWN_DRAIN_S:-30}
+      CONNECTOR_PUBLISHER_HTTP_CONNECT_TIMEOUT_MS: ${CONNECTOR_PUBLISHER_HTTP_CONNECT_TIMEOUT_MS:-5000}
+      CONNECTOR_PUBLISHER_HTTP_READ_TIMEOUT_MS: ${CONNECTOR_PUBLISHER_HTTP_READ_TIMEOUT_MS:-8000}
+      SENTRY_ALLOW_INTERNAL_WEBHOOKS: ${SENTRY_ALLOW_INTERNAL_WEBHOOKS:-false}
+      FLASK_ENV: production
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - '-m'
+        - services.connector_publisher.healthcheck
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    image: ${WMS_API_IMAGE:-sentry-wms-api:coolify}
+    profiles:
+      - workers
+  celery-worker:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    command: celery -A jobs worker --loglevel=info --pool=solo
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sentry}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      SENTRY_ENCRYPTION_KEY: ${SENTRY_ENCRYPTION_KEY:?Set SENTRY_ENCRYPTION_KEY in .env}
+    image: ${WMS_API_IMAGE:-sentry-wms-api:coolify}
+    profiles:
+      - workers
+  admin:
+    build:
+      context: .
+      dockerfile: ./admin/Dockerfile.coolify
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    image: ${WMS_ADMIN_IMAGE:-sentry-wms-admin:coolify}
+    expose:
+      - '8080'
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - '-q'
+        - '--spider'
+        - http://127.0.0.1:8080/
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    ports:
+      - 127.0.0.1:3003:8080
+volumes:
+  pgdata: {}
+  redisdata: {}

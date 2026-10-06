@@ -3,7 +3,9 @@ from io import BytesIO
 import json
 import re
 import uuid
+from urllib.parse import unquote, urlparse
 
+import requests
 from flask import g, jsonify, request, send_file, url_for
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
@@ -13,11 +15,14 @@ from middleware.db import with_db
 from routes.admin import admin_bp
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
 from services.catalog_media import catalog_image_mime
-from services.local_catalog import update_pricing, validate_catalog
+from services.local_catalog import update_pricing, validate_catalog, catalog_review_status
 from services.audit_service import write_audit_log
+from services.webhook_dispatcher.ssrf_guard import resolve_url_addresses, is_private_address, SsrfRejected
 
 
 _CATALOG_IMAGE_MAX_BYTES = 4 * 1024 * 1024
+_CATALOG_IMAGE_DOWNLOAD_TIMEOUT = (5, 15)
+_CATALOG_IMAGE_PATH = re.compile(r'^/api/admin/catalog-images/([0-9a-fA-F-]{36})$')
 
 
 def _item(item_id, lock=False):
@@ -96,6 +101,102 @@ def _insert_catalog_image(item_id, image, actor):
         _external=True, _scheme='https',
     )
     return image_id, image_url
+
+
+def _download_catalog_image(url):
+    """Download one public HTTPS image without allowing an SSRF redirect hop."""
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError('Linkul imaginii trebuie să fie o adresă HTTPS publică.')
+    try:
+        addresses = resolve_url_addresses(url)
+    except SsrfRejected as exc:
+        raise ValueError('Adresa imaginii nu poate fi accesată de server.') from exc
+    if any(is_private_address(address) for address in addresses):
+        raise ValueError('Adresa imaginii trebuie să fie publică; rețelele locale nu sunt permise.')
+
+    response = None
+    try:
+        response = requests.get(
+            url,
+            stream=True,
+            timeout=_CATALOG_IMAGE_DOWNLOAD_TIMEOUT,
+            allow_redirects=False,
+            verify=True,
+            headers={'User-Agent': 'Autosav-WMS-Image-Importer/1.0'},
+        )
+        if 300 <= response.status_code < 400:
+            raise ValueError('Linkul imaginii redirecționează. Introdu adresa finală a imaginii.')
+        if response.status_code != 200:
+            raise ValueError(f'Imaginea nu a putut fi descărcată (HTTP {response.status_code}).')
+        declared_size = response.headers.get('Content-Length')
+        if declared_size:
+            try:
+                if int(declared_size) > _CATALOG_IMAGE_MAX_BYTES:
+                    raise OverflowError('Fotografia poate avea maximum 4 MB.')
+            except ValueError:
+                pass
+        chunks = []
+        size = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > _CATALOG_IMAGE_MAX_BYTES:
+                raise OverflowError('Fotografia poate avea maximum 4 MB.')
+            chunks.append(chunk)
+        content = b''.join(chunks)
+    except (ValueError, OverflowError):
+        raise
+    except requests.RequestException as exc:
+        raise ValueError('Imaginea nu a putut fi descărcată de server.') from exc
+    finally:
+        if response is not None:
+            response.close()
+
+    if not content:
+        raise ValueError('Imaginea descărcată este goală.')
+    mime_type = catalog_image_mime(content)
+    if not mime_type:
+        raise TypeError('Linkul trebuie să indice o imagine JPEG, PNG sau WebP.')
+    extension = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}[mime_type]
+    file_name = secure_filename(unquote(parsed.path.rsplit('/', 1)[-1]))[:240] or f'produs.{extension}'
+    return {'content': content, 'mime_type': mime_type, 'file_name': file_name, 'file_size': len(content)}
+
+
+def _persist_catalog_image_links(item_id, catalog, actor):
+    """Replace external image links with immutable WMS-owned image URLs."""
+    entries = []
+    pending_count = 0
+    for url in catalog.get('images', []):
+        path_match = _CATALOG_IMAGE_PATH.match(urlparse(url).path)
+        owned_image_id = path_match.group(1) if path_match else None
+        if owned_image_id:
+            owned = g.db.execute(text('''
+                SELECT image_id FROM catalog_product_images
+                WHERE image_id = :image_id AND item_id = :item_id
+            '''), {'image_id': owned_image_id, 'item_id': item_id}).scalar()
+            if owned:
+                entries.append(('url', url_for('admin.get_catalog_image', image_id=owned, _external=True, _scheme='https')))
+                continue
+        entries.append(('image', _download_catalog_image(url)))
+        pending_count += 1
+
+    stored_count = int(g.db.execute(
+        text('SELECT COUNT(*) FROM catalog_product_images WHERE item_id = :id'), {'id': item_id},
+    ).scalar() or 0)
+    if stored_count + pending_count > 10:
+        raise ValueError('Produsul poate avea maximum 10 fotografii stocate pe server.')
+    resolved = []
+    for kind, value in entries:
+        if kind == 'url':
+            resolved.append(value)
+            continue
+        _, image_url = _insert_catalog_image(item_id, value, actor)
+        resolved.append(image_url)
+    catalog['images'] = list(dict.fromkeys(resolved))
+    catalog['imageUrl'] = next(iter(catalog['images']), None)
+    return catalog
 
 
 @admin_bp.route('/local-catalog/products', methods=['POST'])
@@ -284,7 +385,12 @@ def get_catalog_image(image_id):
 @with_db
 def save_local_catalog(item_id):
     try:
-        catalog = validate_catalog(request.get_json(silent=True))
+        body = request.get_json(silent=True)
+        # Older APKs keep their existing final-save behavior. The web sends
+        # an explicit flag to distinguish saving work from completing review.
+        complete = body.get('complete', True) if isinstance(body, dict) else True
+        catalog_review_status(None, complete)
+        catalog = validate_catalog(body, require_complete=complete)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 422
     item = _item(item_id, lock=True)
@@ -293,13 +399,22 @@ def save_local_catalog(item_id):
     if item.status == 'MATCHED':
         return jsonify({'error': 'Produsul are deja o identitate TecDoc.'}), 409
     actor = str(g.current_user.get('username') or 'unknown')
+    try:
+        catalog = _persist_catalog_image_links(item_id, catalog, actor)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except OverflowError as exc:
+        return jsonify({'error': str(exc)}), 413
+    except TypeError as exc:
+        return jsonify({'error': str(exc)}), 415
     params = {'id': item_id, 'name': catalog['name'], 'code': catalog['code'],
               'brand': catalog['brand'], 'description': catalog['description'],
               'category': catalog['category'], 'ean': next(iter(catalog['eans']), item.upc),
               'aliases': json.dumps(list(dict.fromkeys(catalog['eans'] + ([item.upc] if item.upc else [])))), 'payload': json.dumps(catalog),
-              'scan': (item.upc or item.sku)[:50], 'actor': actor}
+              'scan': (item.upc or item.sku)[:50], 'actor': actor,
+              'status': catalog_review_status(item.status, complete), 'complete': complete}
     g.db.execute(text('''
-        UPDATE items SET item_name = :name, mpn = :code, upc = :ean,
+        UPDATE items SET item_name = COALESCE(NULLIF(:name, ''), item_name), mpn = :code, upc = :ean,
             description = :description, category = :category,
             barcode_aliases = CAST(:aliases AS jsonb), updated_at = NOW()
         WHERE item_id = :id
@@ -308,12 +423,15 @@ def save_local_catalog(item_id):
         INSERT INTO item_catalog_discoveries
             (item_id, scanned_ean, status, tecdoc_code, tecdoc_brand, tecdoc_name,
              tecdoc_match_type, tecdoc_payload, created_by, reviewed_by, reviewed_at)
-        VALUES (:id, :scan, 'MANUAL', :code, :brand, :name, 'manual', CAST(:payload AS jsonb), :actor, :actor, NOW())
-        ON CONFLICT (item_id) DO UPDATE SET status = 'MANUAL',
+        VALUES (:id, :scan, :status, :code, :brand, :name, 'manual', CAST(:payload AS jsonb), :actor,
+                CASE WHEN :complete THEN :actor ELSE NULL END, CASE WHEN :complete THEN NOW() ELSE NULL END)
+        ON CONFLICT (item_id) DO UPDATE SET status = :status,
             tecdoc_code = :code, tecdoc_brand = :brand, tecdoc_name = :name,
             tecdoc_article_id = NULL, tecdoc_match_type = 'manual',
-            tecdoc_payload = CAST(:payload AS jsonb), reviewed_by = :actor,
-            reviewed_at = NOW(), updated_at = NOW()
+            tecdoc_payload = CAST(:payload AS jsonb),
+            reviewed_by = CASE WHEN :complete THEN :actor ELSE item_catalog_discoveries.reviewed_by END,
+            reviewed_at = CASE WHEN :complete THEN NOW() ELSE item_catalog_discoveries.reviewed_at END,
+            updated_at = NOW()
     '''), params)
     old = item.tecdoc_payload or {}
     if (old.get('code'), old.get('brand')) != (catalog['code'], catalog['brand']):
@@ -324,9 +442,14 @@ def save_local_catalog(item_id):
             pricing = {}
         g.db.execute(text('UPDATE items SET local_pricing = CAST(:pricing AS jsonb) WHERE item_id = :id'),
                      {'id': item_id, 'pricing': json.dumps(pricing)})
-    _audit(item_id, 'LOCAL_CATALOG_UPDATE', {'catalog': catalog})
+    _audit(item_id, 'LOCAL_CATALOG_UPDATE', {'catalog': catalog, 'completed': complete})
     g.db.commit()
-    return jsonify(_serialize(_item(item_id)))
+    result = _serialize(_item(item_id))
+    result['completed'] = complete
+    result['message'] = ('Produsul este complet și a fost scos din lista de produse neechivalate.' if complete
+                         else 'Datele au fost salvate. Produsul rămâne în lista de produse neechivalate.' if result['status'] == 'PENDING'
+                         else 'Modificările produsului au fost salvate.')
+    return jsonify(result)
 
 
 @admin_bp.route('/items/<int:item_id>/connex-prices', methods=['POST'])

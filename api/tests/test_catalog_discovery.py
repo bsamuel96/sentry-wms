@@ -7,6 +7,7 @@ import requests
 from sqlalchemy import text
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
 from routes import catalog_discovery as routes
+from routes.admin import admin_local_catalog
 import db_test_context
 import pytest
 
@@ -370,6 +371,62 @@ def test_manual_catalog_photo_upload_is_persistent_and_saveable(client, auth_hea
     ) == [(len(b"\xff\xd8\xff\xe0product-photo"),)]
 
 
+def test_pasted_catalog_image_is_downloaded_and_replaced_with_server_url(client, auth_headers, monkeypatch):
+    _, item_id = create_discovery()
+    content = b"\xff\xd8\xff\xe0downloaded-product-photo"
+
+    class ImageResponse:
+        status_code = 200
+        headers = {"Content-Length": str(len(content)), "Content-Type": "image/jpeg"}
+
+        def iter_content(self, chunk_size):
+            return iter((content[:8], content[8:]))
+
+        def close(self):
+            pass
+
+    calls = []
+    monkeypatch.setattr(admin_local_catalog, 'resolve_url_addresses', lambda _url: ['93.184.216.34'])
+    monkeypatch.setattr(admin_local_catalog.requests, 'get', lambda url, **kwargs: calls.append((url, kwargs)) or ImageResponse())
+    external_url = 'https://images.example.test/catalog/filter.jpg'
+    saved = client.put(
+        f"/api/admin/items/{item_id}/local-catalog",
+        headers=auth_headers,
+        json={"name": "Filtru", "brand": "Marca", "code": "ABC", "images": [external_url]},
+    )
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    stored_url = saved.get_json()['catalog']['images'][0]
+    assert stored_url.startswith('https://')
+    assert stored_url != external_url
+    assert urlparse(stored_url).path.startswith('/api/admin/catalog-images/')
+    assert calls[0][1]['allow_redirects'] is False
+    assert calls[0][1]['verify'] is True
+    stored = query(
+        "SELECT mime_type,file_size,content FROM catalog_product_images WHERE item_id=%s", (item_id,),
+    )
+    assert [(stored[0][0], stored[0][1], bytes(stored[0][2]))] == [('image/jpeg', len(content), content)]
+    served = client.get(urlparse(stored_url).path)
+    assert served.status_code == 200
+    assert served.data == content
+
+
+def test_pasted_catalog_image_rejects_private_addresses_without_changing_product(client, auth_headers, monkeypatch):
+    _, item_id = create_discovery()
+    original = query("SELECT item_name FROM items WHERE item_id=%s", (item_id,))[0][0]
+    monkeypatch.setattr(admin_local_catalog, 'resolve_url_addresses', lambda _url: ['127.0.0.1'])
+    called = []
+    monkeypatch.setattr(admin_local_catalog.requests, 'get', lambda *_args, **_kwargs: called.append(True))
+    result = client.put(
+        f"/api/admin/items/{item_id}/local-catalog",
+        headers=auth_headers,
+        json={"name": "Nu trebuie salvat", "brand": "Marca", "code": "ABC", "images": ['https://example.test/photo.jpg']},
+    )
+    assert result.status_code == 422
+    assert called == []
+    assert query("SELECT item_name FROM items WHERE item_id=%s", (item_id,)) == [(original,)]
+    assert query("SELECT COUNT(*) FROM catalog_product_images WHERE item_id=%s", (item_id,)) == [(0,)]
+
+
 def test_mobile_can_create_a_complete_manual_product_with_price_photo_and_audit(client, auth_headers):
     ean = f"594{uuid.uuid4().int % 10**10:010d}"
     created = client.post(
@@ -473,3 +530,50 @@ def test_delete_scanned_product_is_blocked_once_used_in_order(client, auth_heade
     assert response.status_code == 409
     assert response.get_json()["code"] == "provisional_item_in_use"
     assert query("SELECT 1 FROM items WHERE item_id=%s", (item_id,)) == [(1,)]
+
+
+def test_catalog_draft_stays_pending_until_explicit_completion(client, auth_headers):
+    discovery_id, item_id = create_discovery("4006381333931")
+    path = f"/api/admin/items/{item_id}/local-catalog"
+    draft = client.put(path, headers=auth_headers, json={"name": "Produs început", "complete": False})
+    assert draft.status_code == 200, draft.get_data(as_text=True)
+    assert draft.get_json()["status"] == "PENDING"
+    assert draft.get_json()["completed"] is False
+    assert query("SELECT status, reviewed_at FROM item_catalog_discoveries WHERE discovery_id=%s", (discovery_id,)) == [("PENDING", None)]
+    queue = client.get("/api/catalog-discovery/queue?status=PENDING", headers=auth_headers).get_json()
+    assert discovery_id in [row["discovery_id"] for row in queue["discoveries"]]
+    invalid = client.put(path, headers=auth_headers, json={"name": "Produs început", "complete": True})
+    assert invalid.status_code == 422
+    assert query("SELECT status FROM item_catalog_discoveries WHERE discovery_id=%s", (discovery_id,)) == [("PENDING",)]
+    saved = client.put(path, headers=auth_headers, json={"name": "Produs complet", "brand": "Marca", "code": "ABC", "complete": True})
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    assert saved.get_json()["completed"] is True
+    assert saved.get_json()["status"] == "MANUAL"
+    assert "scos" in saved.get_json()["message"]
+    pending = client.get("/api/catalog-discovery/queue?status=PENDING", headers=auth_headers).get_json()
+    assert discovery_id not in [row["discovery_id"] for row in pending["discoveries"]]
+    assert query("SELECT item_name FROM items WHERE item_id=%s", (item_id,)) == [("Produs complet",)]
+
+
+def test_item_edit_saves_price_atomically_and_preserves_connex_reference(client, auth_headers):
+    _, item_id = create_discovery("4006381333931")
+    query("UPDATE items SET local_pricing=%s::jsonb WHERE item_id=%s", ('{"source":"connex","price":100,"connex":{"price":100,"id":"123"}}', item_id))
+    path = f"/api/admin/items/{item_id}"
+    old_name = query("SELECT item_name FROM items WHERE item_id=%s", (item_id,))[0][0]
+    for price in [None, "", "-1", "0.001", "NaN", "100000001"]:
+        result = client.put(path, headers=auth_headers, json={"item_name": "Invalid edit", "local_price": price})
+        assert result.status_code == (422 if price == "0.001" else 400), result.get_data(as_text=True)
+        assert query("SELECT item_name,local_pricing->>'price' FROM items WHERE item_id=%s", (item_id,)) == [(old_name, '100')]
+    result = client.put(path, headers=auth_headers, json={"item_name": "Produs actualizat", "local_price": "135,50"})
+    assert result.status_code == 200, result.get_data(as_text=True)
+    pricing = result.get_json()['local_pricing']
+    assert pricing['price'] == 135.5
+    assert pricing['source'] == 'manual'
+    assert pricing['includes_vat'] is True
+    assert pricing['connex']['id'] == '123'
+    assert query("SELECT item_name FROM items WHERE item_id=%s", (item_id,)) == [('Produs actualizat',)]
+    audit = query("SELECT details->'after'->>'price' FROM audit_log WHERE entity_type='item' AND entity_id=%s AND action_type='LOCAL_PRICE_UPDATE'", (item_id,))
+    assert audit == [('135.5',)]
+    result = client.put(path, headers=auth_headers, json={"item_name": "Alt nume"})
+    assert result.status_code == 200
+    assert result.get_json()['local_pricing'] == pricing

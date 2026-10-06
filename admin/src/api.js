@@ -16,7 +16,7 @@ async function apiFetch(path, options = {}) {
   // page mount before they did anything explicit.
   const { silentPermissionDenied = false, ...fetchOptions } = options;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
     ...fetchOptions.headers,
   };
@@ -51,6 +51,7 @@ async function apiFetch(path, options = {}) {
 export const api = {
   get: (path, opts) => apiFetch(path, { ...(opts || {}) }),
   post: (path, body, opts) => apiFetch(path, { method: 'POST', body: JSON.stringify(body), ...(opts || {}) }),
+  upload: (path, body, opts) => apiFetch(path, { method: 'POST', body, ...(opts || {}) }),
   put: (path, body, opts) => apiFetch(path, { method: 'PUT', body: JSON.stringify(body), ...(opts || {}) }),
   patch: (path, body, opts) => apiFetch(path, { method: 'PATCH', body: JSON.stringify(body), ...(opts || {}) }),
   delete: (path, opts) => apiFetch(path, { method: 'DELETE', ...(opts || {}) }),

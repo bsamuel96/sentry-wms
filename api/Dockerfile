@@ -30,6 +30,10 @@ COPY api/ .
 # ./db:/db volume mount and points the env var at /db/mappings instead.
 COPY db/mappings /app/db/mappings
 
+# bootstrap_railway.py also supports self-hosted installs. With the API
+# source in /app, it resolves the schema and additive migrations under /db.
+COPY db /db
+
 # v1.4.2 #73: bake the source version into the image so the app can detect
 # an upgrade-without-rebuild at startup (code pulled but image not rebuilt
 # leaves stale dependencies -- e.g., flask_limiter missing after v1.3->v1.4).

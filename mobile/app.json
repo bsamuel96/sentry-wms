@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Sentry WMS",
+    "name": "Autosav WMS",
     "slug": "sentry-wms",
-    "version": "1.50.1",
+    "version": "1.50.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -26,7 +26,7 @@
         "backgroundColor": "#0b63d6"
       },
       "package": "ro.autosavcar.sentrywms",
-      "versionCode": 40,
+      "versionCode": 44,
       "permissions": [
         "INTERNET",
         "VIBRATE",
@@ -41,15 +41,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permite aplicației Sentry WMS să folosească camera pentru scanarea etichetelor.",
+          "cameraPermission": "Permite aplica\u021biei Autosav WMS s\u0103 foloseasc\u0103 camera pentru scanarea etichetelor.",
           "recordAudioAndroid": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Permite aplicației Sentry WMS să aleagă fotografia produsului pentru echivalarea manuală.",
-          "cameraPermission": "Permite aplicației Sentry WMS să fotografieze produsul pentru echivalarea manuală.",
+          "photosPermission": "Permite aplica\u021biei Autosav WMS s\u0103 aleag\u0103 fotografia produsului pentru echivalarea manual\u0103.",
+          "cameraPermission": "Permite aplica\u021biei Autosav WMS s\u0103 fotografieze produsul pentru echivalarea manual\u0103.",
           "microphonePermission": false
         }
       ],

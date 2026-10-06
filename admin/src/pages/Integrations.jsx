@@ -152,7 +152,7 @@ export default function Integrations() {
       <div className="settings-section">
         <h3>Available integrations</h3>
         <p className="settings-note">
-          Connect Sentry to external ERPs and commerce platforms. Credentials are encrypted at rest and scoped per warehouse.
+          Connect Autosav WMS to external ERPs and commerce platforms. Credentials are encrypted at rest and scoped per warehouse.
         </p>
         {connectors.length === 0 ? (
           <p style={{ color: '#666', fontSize: 14 }}>

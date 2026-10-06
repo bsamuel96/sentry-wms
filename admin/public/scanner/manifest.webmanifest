@@ -1,6 +1,6 @@
 {
-  "name": "Sentry WMS · AutoSavCar Company",
-  "short_name": "Sentry WMS",
+  "name": "Autosav WMS · AutoSavCar Company",
+  "short_name": "Autosav WMS",
   "description": "Aplicația mobilă pentru operațiile depozitului AutoSavCar Company",
   "lang": "ro-RO",
   "id": "/scanner/",
@@ -16,19 +16,19 @@
   ],
   "icons": [
     {
-      "src": "/scanner/icons/sentry-192.png",
+      "src": "/scanner/icons/autosav-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/scanner/icons/sentry-512.png",
+      "src": "/scanner/icons/autosav-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/scanner/icons/sentry-maskable.svg",
+      "src": "/scanner/icons/autosav-maskable.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

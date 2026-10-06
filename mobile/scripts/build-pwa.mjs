@@ -54,9 +54,9 @@ html = html
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Sentry WMS" />
+    <meta name="apple-mobile-web-app-title" content="Autosav WMS" />
     <link rel="manifest" href="${basePath}/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="${basePath}/icons/sentry-192.png" />
+    <link rel="apple-touch-icon" href="${basePath}/icons/autosav-192.png" />
     <link rel="stylesheet" href="${basePath}/pwa.css" />
     <script>
       window.addEventListener('beforeinstallprompt', function (event) {
@@ -66,7 +66,7 @@ html = html
       });
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('${basePath}/sw.js', { scope: '${basePath || '/'}/' }).catch(function () {});
+          navigator.serviceWorker.register('${basePath}/sw.js?v=3', { scope: '${basePath || '/'}/', updateViaCache: 'none' }).catch(function () {});
         });
       }
     </script>

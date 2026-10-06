@@ -84,7 +84,7 @@ describe('instalarea PWA', () => {
   it('manifestul și workerul păstrează datele API în afara cache-ului', () => {
     const manifest = JSON.parse(readFileSync(join(process.cwd(), 'public/manifest.webmanifest'), 'utf8'));
     const worker = readFileSync(join(process.cwd(), 'public/sw.js'), 'utf8');
-    expect(manifest.name).toBe('Sentry WMS');
+    expect(manifest.name).toBe('Autosav WMS');
     expect(manifest.display).toBe('standalone');
     expect(manifest.icons.map((icon) => icon.sizes)).toEqual(['192x192', '512x512']);
     expect(worker).toContain("url.pathname.startsWith('/api/')");

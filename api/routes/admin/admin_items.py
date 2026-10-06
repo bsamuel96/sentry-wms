@@ -1,6 +1,7 @@
 """Items, Preferred Bins, CSV Import, and Inventory Overview endpoints."""
 
 import math
+import json
 import uuid
 
 from flask import g, jsonify, request
@@ -24,6 +25,7 @@ from schemas.csv_import import (
 from schemas.items import CreateItemRequest, CreatePreferredBinRequest, UpdateItemRequest, UpdatePreferredBinRequest
 from services.audit_service import write_audit_log
 from services.events_service import emit_event, get_user_external_id
+from services.local_catalog import update_pricing
 from services.catalog_media import catalog_image_urls
 from services.inventory_service import (
     add_inventory,
@@ -289,7 +291,7 @@ def create_item(validated):
 def update_item(item_id, validated):
     data = validated.model_dump(exclude_unset=True)
 
-    existing = g.db.execute(text("SELECT item_id FROM items WHERE item_id = :iid"), {"iid": item_id}).fetchone()
+    existing = g.db.execute(text("SELECT item_id, local_pricing FROM items WHERE item_id = :iid FOR UPDATE"), {"iid": item_id}).fetchone()
     if not existing:
         return jsonify({"error": "Item not found"}), 404
 
@@ -300,6 +302,18 @@ def update_item(item_id, validated):
             fields.append(f"{col} = :{col}")
             params[col] = data[col]
 
+    if "local_price" in data:
+        try:
+            pricing = update_pricing(existing.local_pricing, 'manual', price=data['local_price'],
+                                     actor=str(g.current_user.get('username') or 'unknown'))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 422
+        fields.append("local_pricing = CAST(:pricing AS jsonb)")
+        params['pricing'] = json.dumps(pricing)
+        write_audit_log(g.db, 'LOCAL_PRICE_UPDATE', 'item', item_id,
+                        g.current_user.get('username') or 'unknown', None,
+                        details={'action': 'manual', 'before': existing.local_pricing, 'after': pricing})
+
     if not fields:
         return jsonify({"error": "No valid fields provided"}), 400
 
@@ -308,10 +322,11 @@ def update_item(item_id, validated):
     g.db.commit()
 
     row = g.db.execute(
-        text("SELECT item_id, sku, item_name, upc, mpn, category, weight_lbs, default_bin_id, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("SELECT item_id, sku, item_name, upc, mpn, category, weight_lbs, default_bin_id, is_active, created_at, updated_at, local_pricing FROM items WHERE item_id = :iid"),
         {"iid": item_id},
     ).fetchone()
     return jsonify({
+        "local_pricing": row.local_pricing,
         "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name, "upc": row.upc,
         "mpn": row.mpn, "category": row.category, "weight_lbs": float(row.weight_lbs) if row.weight_lbs else None,
         "default_bin_id": row.default_bin_id, "is_active": row.is_active,

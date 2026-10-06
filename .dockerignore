@@ -5,6 +5,9 @@
 # builder -- slow on local builds and wasted bandwidth on `az acr build`.
 **/.git
 **/.gitignore
+**/.env
+**/.env.*
+**/.local-secrets
 **/.DS_Store
 **/__pycache__
 **/*.pyc

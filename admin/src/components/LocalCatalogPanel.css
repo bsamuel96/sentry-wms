@@ -15,6 +15,18 @@
 .local-catalog-manual { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px; }
 .local-catalog-manual summary { cursor: pointer; font-weight: 600; }
 .local-catalog-reference-row { display: flex; gap: 8px; align-items: end; margin: 10px 0; }
+.local-catalog-photos { border: 1px dashed var(--border); border-radius: 10px; padding: 16px; margin: 18px 0; }
+.local-catalog-photos h4 { margin: 0; }
+.local-catalog-photos small { display: block; margin: 8px 0; color: var(--text-secondary); }
+.local-catalog-photo-input input { max-width: 100%; }
+.local-catalog-photo-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.local-catalog-photo-grid figure { width: 144px; margin: 0; display: grid; gap: 8px; font-size: 12px; }
+.local-catalog-photo-grid img { width: 144px; height: 144px; object-fit: contain; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.local-catalog-photo-preview { display: block; width: 144px; height: 144px; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: zoom-in; }
+.local-catalog-photo-preview:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 3px; }
+.local-catalog-photo-expanded { display: flex; min-height: min(70vh, 680px); align-items: center; justify-content: center; padding: 8px; background: #fff; }
+.local-catalog-photo-expanded img { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; }
+.local-catalog-photos details summary { cursor: pointer; margin: 8px 0; font-size: 13px; }
 @media (max-width: 650px) {
   .local-catalog-fields { grid-template-columns: 1fr; }
   .local-catalog-match, .local-catalog-reference-row { flex-direction: column; align-items: stretch; }

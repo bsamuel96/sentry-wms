@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
-    <title>Sentry WMS</title>
+    <title>Autosav WMS</title>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
       /* These styles make the body full-height */
@@ -27,9 +27,9 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Sentry WMS" />
+    <meta name="apple-mobile-web-app-title" content="Autosav WMS" />
     <link rel="manifest" href="/scanner/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/scanner/icons/sentry-192.png" />
+    <link rel="apple-touch-icon" href="/scanner/icons/autosav-192.png" />
     <link rel="stylesheet" href="/scanner/pwa.css" />
     <script>
       window.addEventListener('beforeinstallprompt', function (event) {
@@ -39,7 +39,7 @@
       });
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/scanner/sw.js', { scope: '/scanner/' }).catch(function () {});
+          navigator.serviceWorker.register('/scanner/sw.js?v=3', { scope: '/scanner/', updateViaCache: 'none' }).catch(function () {});
         });
       }
     </script>
@@ -52,6 +52,6 @@
     </noscript>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
-  <script src="/scanner/_expo/static/js/web/AppEntry-c978ea45690faa74f8d7e22616c0fa30.js" defer></script>
+  <script src="/scanner/_expo/static/js/web/AppEntry-530c3bfb9482204bcfd0162057b892b8.js" defer></script>
 </body>
 </html>
