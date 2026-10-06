@@ -91,6 +91,28 @@ describe('Local catalogue editor', () => {
     expect(screen.queryByAltText('Previzualizare fotografie nouă')).not.toBeInTheDocument();
   });
 
+  it('accepts product photos by drag and drop and Ctrl+V', async () => {
+    get.mockResolvedValue(response({ status: 'PENDING', catalog, pricing: {} }));
+    render(<LocalCatalogPanel itemId={91} />);
+    const dropZone = await screen.findByLabelText('Fotografii produs');
+    const dropped = new File(['drop'], 'drop.png', { type: 'image/png' });
+
+    fireEvent.dragEnter(dropZone, { dataTransfer: { files: [dropped] } });
+    expect(dropZone).toHaveClass('is-dragging');
+    fireEvent.drop(dropZone, { dataTransfer: { files: [dropped] } });
+    expect(await screen.findByAltText('Previzualizare fotografie nouă')).toHaveAttribute('src', 'blob:preview');
+    expect(dropZone).not.toHaveClass('is-dragging');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renunță la fotografie' }));
+    const pasted = new File(['paste'], 'paste.webp', { type: 'image/webp' });
+    fireEvent.paste(dropZone, {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/webp', getAsFile: () => pasted }],
+      },
+    });
+    expect(await screen.findByAltText('Previzualizare fotografie nouă')).toHaveAttribute('src', 'blob:preview');
+  });
+
   it('opens saved and newly selected product photos in an enlarged modal', async () => {
     get.mockResolvedValue(response({ status: 'PENDING', catalog: { ...catalog, images: ['https://example.test/photo.jpg'] }, pricing: {} }));
     render(<LocalCatalogPanel itemId={91} />);

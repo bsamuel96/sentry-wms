@@ -23,6 +23,7 @@ export default function LocalCatalogPanel({ itemId, onSaved }) {
   const [success, setSuccess] = useState('');
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
+  const [photoDragActive, setPhotoDragActive] = useState(false);
   const [expandedImage, setExpandedImage] = useState(null);
   const photoInput = useRef(null);
   const feedback = useRef(null);
@@ -98,9 +99,7 @@ export default function LocalCatalogPanel({ itemId, onSaved }) {
     });
   }
 
-  function choosePhoto(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
+  function addPhoto(file) {
     if (!file) return;
     setError(''); setSuccess('');
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
@@ -113,6 +112,26 @@ export default function LocalCatalogPanel({ itemId, onSaved }) {
       setError('Produsul poate avea maximum 10 imagini.'); return;
     }
     setPhoto(file);
+  }
+
+  function choosePhoto(event) {
+    addPhoto(event.target.files?.[0]);
+    event.target.value = '';
+  }
+
+  function dropPhoto(event) {
+    event.preventDefault();
+    setPhotoDragActive(false);
+    addPhoto(event.dataTransfer?.files?.[0]);
+  }
+
+  function pastePhoto(event) {
+    const file = [...(event.clipboardData?.items || [])]
+      .find(item => item.kind === 'file' && item.type.startsWith('image/'))
+      ?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    addPhoto(file);
   }
 
   const pricing = data?.pricing || {};
@@ -160,9 +179,20 @@ export default function LocalCatalogPanel({ itemId, onSaved }) {
               <label>Descriere<textarea className="form-input" value={form.description || ''} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
               <label>EAN / coduri de bare (unul pe rând)<textarea className="form-input" value={(form.eans || []).join('\n')} onChange={event => setForm({ ...form, eans: event.target.value.split('\n') })} /></label>
             </div>
-            <section className="local-catalog-photos" aria-label="Fotografii produs">
+            <section
+              className={`local-catalog-photos${photoDragActive ? ' is-dragging' : ''}`}
+              aria-label="Fotografii produs"
+              tabIndex="0"
+              onPaste={pastePhoto}
+              onDragEnter={event => { event.preventDefault(); setPhotoDragActive(true); }}
+              onDragOver={event => event.preventDefault()}
+              onDragLeave={event => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setPhotoDragActive(false);
+              }}
+              onDrop={dropPhoto}
+            >
               <h4>Fotografii produs</h4>
-              <p>Adaugă o poză chiar dacă produsul nu există în TecDoc. Fotografia se salvează odată cu datele produsului.</p>
+              <p>Trage poza aici, lipește-o cu Ctrl+V sau alege un fișier. Fotografia se salvează odată cu datele produsului.</p>
               <button type="button" className="btn btn-primary" disabled={(form.images || []).filter(Boolean).length >= 10} onClick={() => photoInput.current?.click()}>Încarcă poză</button>
               <input ref={photoInput} type="file" aria-label="Alege o fotografie" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto} hidden disabled={(form.images || []).filter(Boolean).length >= 10} />
               <small>JPG, PNG sau WebP · maximum 4 MB / fotografie · maximum 10 imagini</small>

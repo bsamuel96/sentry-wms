@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://api:5000'
+      '/api': process.env.SENTRY_API_PROXY_TARGET || 'http://api:5000'
     }
   },
   test: {

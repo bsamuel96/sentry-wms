@@ -49,7 +49,7 @@ def _autosav_bin_code(barcode):
 def lookup_item(barcode):
     barcode = barcode.strip()
 
-    # Look up by UPC, SKU, or barcode_aliases
+    # Look up by UPC, SKU, manufacturer code, or barcode aliases.
     item_row = g.db.execute(
         text(
             """
@@ -66,6 +66,7 @@ def lookup_item(barcode):
             LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             WHERE i.upc = :barcode
                OR i.sku = :barcode
+               OR i.mpn = :barcode
                OR i.barcode_aliases @> CAST(:barcode_json AS jsonb)
             LIMIT 1
             """

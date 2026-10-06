@@ -45,6 +45,11 @@ def _valid_scanned_product_code(value):
     return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/+*-]{5,49}", barcode))
 
 
+def _valid_manufacturer_code(value):
+    code = str(value or "").strip()
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._/+*-]{0,63}", code))
+
+
 def _mobile_stock_entry_schema_ready(db):
     return bool(db.execute(text("""
         SELECT to_regclass('public.item_catalog_discoveries') IS NOT NULL
@@ -53,11 +58,12 @@ def _mobile_stock_entry_schema_ready(db):
 
 
 def _provisional_sku(barcode):
-    candidate = f"SCAN-{barcode}"
+    safe_code = re.sub(r"[^A-Za-z0-9._/+*-]+", "-", barcode).strip("-") or "ITEM"
+    candidate = f"SCAN-{safe_code}"
     if len(candidate) <= 50:
         return candidate
     digest = hashlib.sha256(barcode.encode("utf-8")).hexdigest()[:10]
-    return f"SCAN-{barcode[:34]}-{digest}"
+    return f"SCAN-{safe_code[:34]}-{digest}"
 
 
 def _stock_entry_payload(db, row, *, repeated=False):
@@ -261,16 +267,19 @@ def stock_entry():
     except (TypeError, ValueError, AttributeError):
         return jsonify({"error": "Depozitul, locația, cantitatea și cheia cererii sunt obligatorii."}), 422
 
-    barcode = str(body.get("barcode") or body.get("ean") or "").strip()
+    ean = str(body.get("barcode") or body.get("ean") or "").strip()
     product_code = str(body.get("product_code") or "").strip()
+    lookup_code = ean or product_code
     raw_price = body.get("price")
     price_supplied = raw_price is not None and str(raw_price).strip() != ""
-    if not _valid_scanned_product_code(barcode):
+    if not lookup_code:
+        return jsonify({"error": "Introdu un EAN sau un cod producător."}), 422
+    if ean and not _valid_scanned_product_code(ean):
         return jsonify({
-            "error": "Scanează un cod de bare de 6–50 caractere (cifre, litere, punct, cratimă, / sau +)."
+            "error": "EAN-ul trebuie să aibă 6–50 caractere (cifre, litere, punct, cratimă, / sau +)."
         }), 422
-    if len(product_code) > 100 or any(ord(char) < 32 for char in product_code):
-        return jsonify({"error": "Codul produsului poate avea maximum 100 de caractere."}), 422
+    if product_code and not _valid_manufacturer_code(product_code):
+        return jsonify({"error": "Codul producătorului poate avea maximum 64 de caractere."}), 422
     try:
         local_price = positive_price(raw_price) if price_supplied else None
     except ValueError as exc:
@@ -317,23 +326,24 @@ def stock_entry():
 
     # A second handheld can scan the same brand-new code at the same time.
     # Lock on the code before deciding whether the provisional item exists.
-    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:barcode))"), {"barcode": f"barcode:{barcode}"})
+    g.db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:barcode))"), {"barcode": f"product:{lookup_code}"})
     item = g.db.execute(
         text("""
             SELECT item_id, sku, item_name, upc, mpn, external_id, local_pricing
             FROM items
             WHERE upc = :barcode
                OR barcode_aliases @> CAST(:aliases AS jsonb)
+               OR (:product_code <> '' AND mpn = :product_code)
             ORDER BY item_id
             LIMIT 1
             FOR UPDATE
         """),
-        {"barcode": barcode, "aliases": json.dumps([barcode])},
+        {"barcode": lookup_code, "aliases": json.dumps([lookup_code]), "product_code": product_code},
     ).fetchone()
     provisional = False
     if not item:
         provisional = True
-        base_sku = _provisional_sku(barcode)
+        base_sku = _provisional_sku(lookup_code)
         sku = base_sku
         suffix = 1
         while g.db.execute(text("SELECT 1 FROM items WHERE sku = :sku"), {"sku": sku}).fetchone():
@@ -346,16 +356,16 @@ def stock_entry():
                     sku, item_name, description, upc, mpn, category,
                     default_bin_id, external_id
                 ) VALUES (
-                    :sku, :name, :description, :barcode, NULLIF(:product_code, ''), :category,
+                    :sku, :name, :description, NULLIF(:ean, ''), NULLIF(:product_code, ''), :category,
                     :bin_id, :external_id
                 )
                 RETURNING item_id, sku, item_name, upc, mpn, external_id, local_pricing
             """),
             {
                 "sku": sku,
-                "name": f"Produs nou – {barcode}",
+                "name": f"Produs nou – {lookup_code}",
                 "description": "Creat prin scanare în depozit; identificarea TecDoc este în așteptare.",
-                "barcode": barcode,
+                "ean": ean,
                 "product_code": product_code,
                 "category": "În așteptare TecDoc",
                 "bin_id": bin_id,
@@ -369,7 +379,7 @@ def stock_entry():
                 ) VALUES (:iid, :barcode, 'PENDING', :actor)
                 ON CONFLICT (item_id) DO NOTHING
             """),
-            {"iid": item.item_id, "barcode": barcode, "actor": str(user.get("username") or "unknown")},
+            {"iid": item.item_id, "barcode": lookup_code, "actor": str(user.get("username") or "unknown")},
         )
     elif product_code and product_code != str(item.mpn or ""):
         g.db.execute(
@@ -433,7 +443,7 @@ def stock_entry():
         warehouse_id=warehouse_id,
         details={
             "operation": "mobile_stock_entry",
-            "barcode": barcode,
+            "barcode": ean or None,
             "product_code": product_code or None,
             "price": local_price,
             "price_updated": local_price is not None,

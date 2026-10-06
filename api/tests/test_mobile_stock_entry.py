@@ -89,6 +89,28 @@ def test_known_ean_adds_inventory_without_catalog_queue(client, auth_headers):
     assert query("SELECT 1 FROM item_catalog_discoveries WHERE item_id=%s", (item_id,)) == []
 
 
+def test_manufacturer_code_alone_creates_a_provisional_item(client, auth_headers):
+    bin_id, warehouse_id, _ = first_bin()
+    product_code = f"ATK {uuid.uuid4().hex[:8]}.054"
+    response = client.post("/api/inventory/stock-entry", headers=auth_headers, json={
+        "warehouse_id": warehouse_id,
+        "bin_id": bin_id,
+        "product_code": product_code,
+        "quantity": 1,
+        "idempotency_key": str(uuid.uuid4()),
+    })
+    assert response.status_code == 201, response.get_data(as_text=True)
+    payload = response.get_json()
+    assert payload["created_provisional_item"] is True
+    assert payload["item"]["upc"] is None
+    assert payload["item"]["product_code"] == product_code
+    assert " " not in payload["item"]["sku"]
+    assert query(
+        "SELECT scanned_ean,status FROM item_catalog_discoveries WHERE item_id=%s",
+        (payload["item"]["item_id"],),
+    ) == [(product_code, "PENDING")]
+
+
 def test_session_row_can_reverse_its_stock_entry(client, auth_headers):
     bin_id, warehouse_id, _ = first_bin()
     body = {

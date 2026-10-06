@@ -4,7 +4,8 @@ import BarcodeCameraModal from '../components/BarcodeCameraModal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { useWarehouse } from '../warehouse.jsx';
 
-const PRODUCT_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+*-]{5,49}$/;
+const EAN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/+*-]{5,49}$/;
+const MANUFACTURER_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._/+*-]{0,63}$/;
 
 function requestId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -37,7 +38,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
   const [binCode, setBinCode] = useState('');
   const [bin, setBin] = useState(null);
   const [newBinCode, setNewBinCode] = useState('');
-  const [productCode, setProductCode] = useState('');
+  const [ean, setEan] = useState('');
+  const [manufacturerCode, setManufacturerCode] = useState('');
   const [item, setItem] = useState(null);
   const [entryKey, setEntryKey] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -50,7 +52,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
   const quantityNumber = useMemo(() => Number.parseInt(quantity, 10) || 0, [quantity]);
 
   function clearProduct({ focus = true } = {}) {
-    setProductCode('');
+    setEan('');
+    setManufacturerCode('');
     setItem(null);
     setEntryKey('');
     setQuantity('1');
@@ -114,27 +117,38 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     }
   }
 
-  const selectProduct = useCallback(async (rawCode) => {
-    const code = String(rawCode || '').trim();
+  const selectProduct = useCallback(async (rawEan, rawManufacturerCode) => {
+    const nextEan = String(rawEan || '').trim();
+    const nextManufacturerCode = String(rawManufacturerCode || '').trim();
+    const lookupCode = nextEan || nextManufacturerCode;
     if (!bin) {
       setError('Scanează mai întâi locația.');
       return;
     }
-    if (!PRODUCT_CODE_PATTERN.test(code)) {
-      setError('Scanează un cod de produs de 6–50 de caractere. Sunt acceptate cifre, litere, punct, cratimă, / și +.');
+    if (!lookupCode) {
+      setError('Introdu un EAN sau un cod producător.');
+      return;
+    }
+    if (nextEan && !EAN_PATTERN.test(nextEan)) {
+      setError('EAN-ul trebuie să aibă 6–50 de caractere. Sunt acceptate cifre, litere, punct, cratimă, / și +.');
+      return;
+    }
+    if (nextManufacturerCode && !MANUFACTURER_CODE_PATTERN.test(nextManufacturerCode)) {
+      setError('Codul producătorului poate avea maximum 64 de caractere.');
       return;
     }
     setBusy('product');
     setError('');
     setSuccess('');
-    setProductCode(code);
+    setEan(nextEan);
+    setManufacturerCode(nextManufacturerCode);
     setQuantity('1');
     setEntryKey(requestId());
     try {
-      const response = await api.get(`/lookup/item/${encodeURIComponent(code)}`);
+      const response = await api.get(`/lookup/item/${encodeURIComponent(lookupCode)}`);
       if (response?.status === 404) {
         setItem({
-          sku: `SCAN-${code}`,
+          sku: `SCAN-${lookupCode}`,
           item_name: 'Produs nou · va fi echivalat ulterior în TecDoc',
           provisional: true,
         });
@@ -144,7 +158,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       const payload = await response.json();
       setItem(payload.item);
     } catch (lookupError) {
-      setProductCode('');
+      setEan('');
+      setManufacturerCode('');
       setEntryKey('');
       setItem(null);
       setError(lookupError.message || 'Produsul nu a putut fi verificat.');
@@ -154,7 +169,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
   }, [bin]);
 
   async function saveEntry() {
-    if (!warehouseId || !bin?.bin_id || !productCode || !entryKey || busy) return;
+    const lookupCode = ean.trim() || manufacturerCode.trim();
+    if (!warehouseId || !bin?.bin_id || !lookupCode || !entryKey || busy) return;
     if (quantityNumber < 1 || quantityNumber > 100000) {
       setError('Cantitatea trebuie să fie între 1 și 100000.');
       return;
@@ -166,7 +182,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       const response = await api.post('/inventory/stock-entry', {
         warehouse_id: warehouseId,
         bin_id: bin.bin_id,
-        barcode: productCode,
+        ean: ean.trim(),
+        product_code: manufacturerCode.trim(),
         quantity: quantityNumber,
         idempotency_key: entryKey,
       });
@@ -174,7 +191,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       const payload = await response.json();
       setSessionEntries((current) => [{
         id: payload.stock_entry_id,
-        sku: payload.item?.sku || productCode,
+        sku: payload.item?.sku || lookupCode,
         name: payload.item?.item_name || 'Produs',
         quantity: payload.quantity_added,
         total: payload.quantity_in_bin,
@@ -198,7 +215,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
 
   function submitProduct(event) {
     event.preventDefault();
-    selectProduct(productCode);
+    selectProduct(ean, manufacturerCode);
   }
 
   function handleCameraResult(value) {
@@ -206,8 +223,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       setBinCode(value);
       selectBin(value);
     } else {
-      setProductCode(value);
-      selectProduct(value);
+      setEan(value);
+      selectProduct(value, manufacturerCode);
     }
     setCameraTarget('');
   }
@@ -286,21 +303,36 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
           </div>
 
           {bin && !item ? (
-            <form className="stock-entry-scan-row" onSubmit={submitProduct}>
-              <label className="stock-entry-input-wrap">
-                <span>EAN / cod produs</span>
-                <input
-                  ref={productInputRef}
-                  className="form-input mono"
-                  value={productCode}
-                  onChange={(event) => setProductCode(event.target.value)}
-                  placeholder="Scanează și apasă Enter"
-                  autoComplete="off"
-                  disabled={Boolean(busy)}
-                />
-              </label>
-              <button type="submit" className="btn btn-primary" disabled={!productCode.trim() || Boolean(busy)}>{busy === 'product' ? 'Se verifică…' : 'Confirmă'}</button>
-              <button type="button" className="btn" onClick={() => setCameraTarget('product')} disabled={Boolean(busy)}>▣ Cameră</button>
+            <form className="stock-entry-product-form" onSubmit={submitProduct}>
+              <div className="stock-entry-product-fields">
+                <label className="stock-entry-input-wrap">
+                  <span>EAN (opțional)</span>
+                  <input
+                    ref={productInputRef}
+                    className="form-input mono"
+                    value={ean}
+                    onChange={(event) => setEan(event.target.value)}
+                    placeholder="Scanează EAN"
+                    autoComplete="off"
+                    disabled={Boolean(busy)}
+                  />
+                </label>
+                <label className="stock-entry-input-wrap">
+                  <span>Cod producător (opțional)</span>
+                  <input
+                    className="form-input mono"
+                    value={manufacturerCode}
+                    onChange={(event) => setManufacturerCode(event.target.value)}
+                    placeholder="Introdu codul producătorului"
+                    autoComplete="off"
+                    disabled={Boolean(busy)}
+                  />
+                </label>
+              </div>
+              <div className="stock-entry-product-actions">
+                <button type="submit" className="btn btn-primary" disabled={!(ean.trim() || manufacturerCode.trim()) || Boolean(busy)}>{busy === 'product' ? 'Se verifică…' : 'Confirmă'}</button>
+                <button type="button" className="btn" onClick={() => setCameraTarget('product')} disabled={Boolean(busy)}>▣ Cameră EAN</button>
+              </div>
             </form>
           ) : null}
 
@@ -308,9 +340,10 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
             <div className="stock-entry-product">
               <div className="stock-entry-product-summary">
                 <div>
-                  <strong className="mono">{item.sku || productCode}</strong>
+                  <strong className="mono">{item.sku || ean || manufacturerCode}</strong>
                   <span>{item.item_name || 'Produs'}</span>
-                  <small className="mono">COD SCANAT {productCode}</small>
+                  {ean ? <small className="mono">EAN {ean}</small> : null}
+                  {manufacturerCode ? <small className="mono">COD PRODUCĂTOR {manufacturerCode}</small> : null}
                 </div>
                 <span className={`tag ${item.provisional ? 'tag-info' : 'tag-success'}`}>
                   {item.provisional ? 'TECDOC ÎN AȘTEPTARE' : 'IDENTIFICAT'}

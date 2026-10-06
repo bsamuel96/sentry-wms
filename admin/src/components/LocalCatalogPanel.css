@@ -15,7 +15,8 @@
 .local-catalog-manual { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 20px; }
 .local-catalog-manual summary { cursor: pointer; font-weight: 600; }
 .local-catalog-reference-row { display: flex; gap: 8px; align-items: end; margin: 10px 0; }
-.local-catalog-photos { border: 1px dashed var(--border); border-radius: 10px; padding: 16px; margin: 18px 0; }
+.local-catalog-photos { border: 2px dashed var(--border); border-radius: 10px; padding: 16px; margin: 18px 0; transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease; }
+.local-catalog-photos:focus-visible, .local-catalog-photos.is-dragging { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); outline: 0; }
 .local-catalog-photos h4 { margin: 0; }
 .local-catalog-photos small { display: block; margin: 8px 0; color: var(--text-secondary); }
 .local-catalog-photo-input input { max-width: 100%; }
