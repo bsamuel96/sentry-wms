@@ -45,25 +45,12 @@ export default function Settings() {
     });
 
     // Load all settings
-    Promise.all([
-      api.get('/admin/settings/count_show_expected'),
-      api.get('/admin/settings/require_packing_before_shipping'),
-      api.get('/admin/settings/allow_over_receiving'),
-      api.get('/admin/settings/default_receiving_bin'),
-      api.get('/admin/settings/require_count_approval_separation'),
-      api.get('/admin/settings/picking_ticket_company_name'),
-      api.get('/admin/settings/picking_ticket_company_address'),
-      api.get('/admin/settings/picking_ticket_logo_url'),
-      api.get('/admin/settings/picking_ticket_returns_text'),
-      api.get('/admin/settings/pos_activity_enabled'),
-      api.get('/admin/settings/fraud_review_billing_shipping'),
-      api.get('/admin/settings/dashboard_bubble_origins'),
-    ]).then(async (responses) => {
+    api.get('/admin/settings').then(async (response) => {
       const initial = {};
-      for (const res of responses) {
-        if (res?.ok) {
-          const data = await res.json();
-          initial[data.key] = data.value;
+      if (response?.ok) {
+        const data = await response.json();
+        for (const setting of data.settings || []) {
+          initial[setting.key] = setting.value;
         }
       }
       // Set defaults for missing settings

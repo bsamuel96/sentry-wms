@@ -11,6 +11,14 @@ class TestItemLookup:
         resp = client.get("/api/lookup/item/999999999999", headers=auth_headers)
         assert resp.status_code == 404
 
+    def test_lookup_item_can_return_empty_result_for_interactive_scanning(self, client, auth_headers):
+        resp = client.get(
+            "/api/lookup/item/999999999999?allow_missing=1",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json() == {"item": None, "locations": []}
+
     def test_lookup_item_returns_location_details(self, client, auth_headers):
         resp = client.get("/api/lookup/item/100000000001", headers=auth_headers)
         data = resp.get_json()

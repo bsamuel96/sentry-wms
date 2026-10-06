@@ -93,7 +93,7 @@ describe('introducere marfă prin scanare în web', () => {
     fireEvent.submit(screen.getByLabelText('Cod producător (opțional)').closest('form'));
 
     expect(await screen.findByText('TECDOC ÎN AȘTEPTARE')).toBeInTheDocument();
-    expect(get).toHaveBeenLastCalledWith('/lookup/item/ATK%2003.03.054');
+    expect(get).toHaveBeenLastCalledWith('/lookup/item/ATK%2003.03.054?allow_missing=1');
     expect(screen.getByText('COD PRODUCĂTOR ATK 03.03.054')).toBeInTheDocument();
   });
 

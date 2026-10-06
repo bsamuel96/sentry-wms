@@ -99,12 +99,13 @@ export default function Sidebar({ mobileOpen = false, onNavigate }) {
   useEffect(() => {
     let cancelled = false;
     api.get(
-      '/admin/settings/pos_activity_enabled',
+      '/admin/settings',
       { silentPermissionDenied: true },
     ).then(async (res) => {
       if (!res?.ok || cancelled) return;
       const data = await res.json();
-      setPosActivityEnabled(data?.value === 'true');
+      const setting = (data?.settings || []).find(({ key }) => key === 'pos_activity_enabled');
+      setPosActivityEnabled(setting?.value === 'true');
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);

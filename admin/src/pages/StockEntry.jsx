@@ -145,7 +145,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     setQuantity('1');
     setEntryKey(requestId());
     try {
-      const response = await api.get(`/lookup/item/${encodeURIComponent(lookupCode)}`);
+      const response = await api.get(`/lookup/item/${encodeURIComponent(lookupCode)}?allow_missing=1`);
       if (response?.status === 404) {
         setItem({
           sku: `SCAN-${lookupCode}`,
@@ -156,6 +156,14 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       }
       if (!response?.ok) throw new Error(await readError(response, 'Produsul nu a putut fi verificat.'));
       const payload = await response.json();
+      if (!payload.item) {
+        setItem({
+          sku: `SCAN-${lookupCode}`,
+          item_name: 'Produs nou · va fi echivalat ulterior în TecDoc',
+          provisional: true,
+        });
+        return;
+      }
       setManufacturerCode(nextManufacturerCode || payload.item?.product_code || payload.item?.mpn || '');
       setItem(payload.item);
     } catch (lookupError) {

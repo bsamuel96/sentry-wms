@@ -74,6 +74,8 @@ def lookup_item(barcode):
         {"barcode": barcode, "barcode_json": json.dumps([barcode])},
     ).fetchone()
 
+    if not item_row and request.args.get("allow_missing", "").lower() in {"1", "true", "yes"}:
+        return jsonify({"item": None, "locations": []})
     if not item_row:
         return jsonify({"error": "Item not found"}), 404
 
