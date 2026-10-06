@@ -95,11 +95,26 @@ def _unique_connex_reference_matches(payload, reference):
 
 
 def _connex_lookup(*, ean="", reference="", product_id=""):
-    payload = {}
-    if str(ean or "").strip():
-        payload["ean"] = str(ean).strip()
-    if str(reference or "").strip():
-        payload["reference"] = str(reference).strip()
+    clean_reference = str(reference or "").strip()
+    if clean_reference:
+        payload = {"reference": clean_reference}
+        if product_id:
+            payload["product_id"] = str(product_id)
+        quote_payload = catalog_request("/api/integrations/sentry/connex-prices", payload=payload)
+        matches = [{
+            **candidate,
+            "source": "connex",
+            "matchType": "connex_reference",
+            "description": candidate.get("name") or "",
+            "category": "Connex",
+            "ean": None,
+            "eans": [],
+            "images": [],
+            "references": [],
+        } for candidate in quote_payload.get("matches", [])]
+        return {"searchedBy": "connex_reference", "reference": clean_reference, "matches": matches}
+
+    payload = {"ean": str(ean or "").strip()}
     if product_id:
         payload["product_id"] = str(product_id)
     return catalog_request("/api/integrations/sentry/connex-catalog", payload=payload)

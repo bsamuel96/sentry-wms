@@ -315,6 +315,7 @@ def test_connex_manufacturer_code_lookup_does_not_store_the_scanned_code_as_ean(
         headers=auth_headers,
     )
     assert matches.status_code == 200, matches.get_data(as_text=True)
+    assert calls[-1][0] == "/api/integrations/sentry/connex-prices"
     assert calls[-1][1]["payload"] == {"reference": "ATK 03.03.054"}
 
     saved = client.post(
