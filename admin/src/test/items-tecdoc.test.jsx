@@ -39,7 +39,7 @@ describe('catalogul de produse TecDoc', () => {
         tecdoc_code: 'C113',
         tecdoc_brand: 'DOLZ',
         tecdoc_name: 'Pompă apă',
-        image_url: 'https://cdn.example.test/c113.jpg',
+        image_url: 'https://cdn.example.test/c113.jpg', quantity_on_hand: 27,
       }],
       total: 1,
       page: 1,
@@ -54,6 +54,8 @@ describe('catalogul de produse TecDoc', () => {
     expect(screen.getByText('Pompă apă')).toBeInTheDocument();
     expect(screen.getByText('C113')).toBeInTheDocument();
     expect(screen.getByText('4006381333931')).toBeInTheDocument();
+    expect(screen.getByText('27')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Bucăți adăugate' })).toBeInTheDocument();
     expect(screen.getAllByText('TecDoc')).toHaveLength(2);
   });
 

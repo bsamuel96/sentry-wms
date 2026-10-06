@@ -289,6 +289,7 @@ class TestItems:
         assert data["total"] == 20
         assert data["pages"] == 7
         assert data["page"] == 1
+        assert all(isinstance(item["quantity_on_hand"], int) for item in data["items"])
 
     def test_list_items_filter_category(self, client, auth_headers):
         resp = client.get("/api/admin/items?category=Flies", headers=auth_headers)

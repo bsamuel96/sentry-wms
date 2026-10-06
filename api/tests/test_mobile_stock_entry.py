@@ -38,6 +38,7 @@ def test_unknown_supplier_barcode_creates_provisional_item_queue_and_inventory_o
     assert payload["quantity_added"] == 4
     assert payload["quantity_in_bin"] == 4
     assert payload["catalog_status"] == "PENDING"
+    assert isinstance(payload["discovery_id"], int)
     assert payload["created_provisional_item"] is True
     assert payload["item"]["product_code"] == "ATK 03.03.054"
     assert payload["item"]["local_pricing"]["price"] == 129.9

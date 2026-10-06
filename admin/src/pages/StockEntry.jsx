@@ -156,6 +156,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       }
       if (!response?.ok) throw new Error(await readError(response, 'Produsul nu a putut fi verificat.'));
       const payload = await response.json();
+      setManufacturerCode(nextManufacturerCode || payload.item?.product_code || payload.item?.mpn || '');
       setItem(payload.item);
     } catch (lookupError) {
       setEan('');
@@ -168,14 +169,35 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     }
   }, [bin]);
 
-  async function saveEntry() {
+  async function tryCatalogMatch(discoveryId) {
+    if (!discoveryId) return { matched: false, message: 'Produsul nu are o înregistrare de echivalat.' };
+    if (ean.trim()) {
+      const response = await api.post('/catalog-discovery/queue/bulk-match', { discovery_ids: [discoveryId] });
+      if (!response?.ok) throw new Error(await readError(response, 'TecDoc nu a putut fi verificat.'));
+      const result = await response.json();
+      if (Number(result.summary?.matched || 0) > 0) {
+        return { matched: true, message: 'Produs echivalat automat în TecDoc.' };
+      }
+    }
+    if (manufacturerCode.trim()) {
+      const response = await api.post('/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [discoveryId] });
+      if (!response?.ok) throw new Error(await readError(response, 'Connex nu a putut fi verificat.'));
+      const result = await response.json();
+      if (Number(result.summary?.matched || 0) > 0) {
+        return { matched: true, message: 'Produs echivalat automat în Connex după codul producătorului.' };
+      }
+    }
+    return { matched: false, message: 'Nu s-a găsit încă o echivalare exactă; produsul rămâne în Produse neechivalate.' };
+  }
+
+  async function saveEntry(tryMatch = false) {
     const lookupCode = ean.trim() || manufacturerCode.trim();
     if (!warehouseId || !bin?.bin_id || !lookupCode || !entryKey || busy) return;
     if (quantityNumber < 1 || quantityNumber > 100000) {
       setError('Cantitatea trebuie să fie între 1 și 100000.');
       return;
     }
-    setBusy('save');
+    setBusy(tryMatch ? 'save-match' : 'save');
     setError('');
     setSuccess('');
     try {
@@ -189,15 +211,23 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
       });
       if (!response?.ok) throw new Error(await readError(response, 'Produsul nu a putut fi introdus în stoc.'));
       const payload = await response.json();
+      let matchResult = { matched: payload.catalog_status !== 'PENDING', message: '' };
+      if (tryMatch && payload.catalog_status === 'PENDING') {
+        try {
+          matchResult = await tryCatalogMatch(payload.discovery_id);
+        } catch (matchError) {
+          matchResult = { matched: false, message: `Echivalarea nu a putut fi verificată acum: ${matchError.message}` };
+        }
+      }
       setSessionEntries((current) => [{
         id: payload.stock_entry_id,
         sku: payload.item?.sku || lookupCode,
         name: payload.item?.item_name || 'Produs',
         quantity: payload.quantity_added,
         total: payload.quantity_in_bin,
-        pending: payload.catalog_status === 'PENDING',
+        pending: payload.catalog_status === 'PENDING' && !matchResult.matched,
       }, ...current].slice(0, 12));
-      setSuccess(`Adăugat: ${payload.quantity_added} buc. în ${bin.bin_code}.`);
+      setSuccess(`Adăugat: ${payload.quantity_added} buc. în ${bin.bin_code}.${matchResult.message ? ` ${matchResult.message}` : ''}`);
       clearProduct();
     } catch (saveError) {
       // Keep entryKey intact. A second click after a timeout is an
@@ -228,6 +258,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     }
     setCameraTarget('');
   }
+
+  const pendingItem = item && (item.provisional || item.catalog_status === 'PENDING');
 
   return (
     <div className="stock-entry-page">
@@ -345,10 +377,25 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
                   {ean ? <small className="mono">EAN {ean}</small> : null}
                   {manufacturerCode ? <small className="mono">COD PRODUCĂTOR {manufacturerCode}</small> : null}
                 </div>
-                <span className={`tag ${item.provisional ? 'tag-info' : 'tag-success'}`}>
-                  {item.provisional ? 'TECDOC ÎN AȘTEPTARE' : 'IDENTIFICAT'}
+                <span className={`tag ${pendingItem ? 'tag-info' : 'tag-success'}`}>
+                  {pendingItem ? 'TECDOC ÎN AȘTEPTARE' : 'IDENTIFICAT'}
                 </span>
               </div>
+              {pendingItem ? (
+                <div className="stock-entry-product-fields">
+                  <label className="stock-entry-input-wrap">
+                    <span>Cod producător pentru echivalare (opțional)</span>
+                    <input
+                      className="form-input mono"
+                      value={manufacturerCode}
+                      onChange={(event) => setManufacturerCode(event.target.value)}
+                      placeholder="Ex: ATK 03.03.054"
+                      autoComplete="off"
+                      disabled={Boolean(busy)}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <div className="stock-entry-quantity">
                 <label htmlFor="stock-entry-quantity">Cantitate</label>
                 <div>
@@ -358,7 +405,8 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
                 </div>
               </div>
               <div className="stock-entry-actions">
-                <button type="button" className="btn btn-primary stock-entry-save" onClick={saveEntry} disabled={quantityNumber < 1 || Boolean(busy)}>{busy === 'save' ? 'Se salvează…' : `Adaugă în ${bin.bin_code}`}</button>
+                <button type="button" className="btn stock-entry-save" onClick={() => saveEntry(false)} disabled={quantityNumber < 1 || Boolean(busy)}>{busy === 'save' ? 'Se salvează…' : `Adaugă în ${bin.bin_code}`}</button>
+                {pendingItem ? <button type="button" className="btn btn-primary stock-entry-save" onClick={() => saveEntry(true)} disabled={quantityNumber < 1 || Boolean(busy)}>{busy === 'save-match' ? 'Se adaugă și se echivalează…' : 'Adaugă și încearcă echivalarea'}</button> : null}
                 <button type="button" className="btn" onClick={() => clearProduct()} disabled={Boolean(busy)}>Anulează produsul</button>
               </div>
             </div>

@@ -81,7 +81,7 @@ def _stock_entry_payload(db, row, *, repeated=False):
     ).fetchone()
     discovery = db.execute(
         text("""
-            SELECT status, tecdoc_article_id, tecdoc_code, tecdoc_brand,
+            SELECT discovery_id, status, tecdoc_article_id, tecdoc_code, tecdoc_brand,
                    tecdoc_name, tecdoc_match_type, tecdoc_payload
             FROM item_catalog_discoveries WHERE item_id = :iid
         """),
@@ -110,6 +110,7 @@ def _stock_entry_payload(db, row, *, repeated=False):
         },
         "bin_id": row.bin_id,
         "warehouse_id": row.warehouse_id,
+        "discovery_id": discovery.discovery_id if discovery else None,
         "quantity_added": row.quantity,
         "quantity_in_bin": int(current or 0),
         "catalog_status": discovery.status if discovery else "KNOWN",

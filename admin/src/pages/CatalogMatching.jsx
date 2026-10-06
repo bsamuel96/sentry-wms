@@ -456,7 +456,7 @@ export default function CatalogMatching() {
     ) },
     { key: 'ean', label: 'Cod scanat', mono: true },
     { key: 'item_name', label: 'Produs curent' },
-    { key: 'quantity_on_hand', label: 'Cantitate' },
+    { key: 'quantity_on_hand', label: 'Bucăți adăugate', render: (row) => Number(row.quantity_on_hand || 0).toLocaleString('ro-RO') },
     { key: 'locations', label: 'Locații', render: (row) => (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—' },
     { key: 'status', label: 'Stare', render: (row) => statusTag(row) },
     { key: 'created_by', label: 'Scanat de', render: (row) => row.created_by || '—' },

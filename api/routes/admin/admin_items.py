@@ -96,6 +96,11 @@ def list_items():
             SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.weight_lbs,
                    i.default_bin_id, i.is_active, i.created_at, i.local_pricing,
                    b.bin_code AS default_bin_code,
+                   COALESCE((
+                       SELECT SUM(inv.quantity_on_hand)
+                       FROM inventory inv
+                       WHERE inv.item_id = i.item_id
+                   ), 0) AS quantity_on_hand,
                    d.status AS catalog_status, d.tecdoc_article_id,
                    d.tecdoc_code, d.tecdoc_brand, d.tecdoc_name,
                    d.tecdoc_match_type, d.tecdoc_payload
@@ -141,6 +146,7 @@ def _serialize_admin_item(row):
         "weight_lbs": float(row.weight_lbs) if row.weight_lbs else None,
         "default_bin_id": row.default_bin_id,
         "default_bin_code": row.default_bin_code,
+        "quantity_on_hand": int(row.quantity_on_hand or 0),
         "is_active": row.is_active,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "local_pricing": row.local_pricing,

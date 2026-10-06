@@ -97,6 +97,41 @@ describe('introducere marfă prin scanare în web', () => {
     expect(screen.getByText('COD PRODUCĂTOR ATK 03.03.054')).toBeInTheDocument();
   });
 
+  it('adaugă stocul și încearcă echivalarea TecDoc apoi Connex', async () => {
+    get
+      .mockResolvedValueOnce(jsonResponse({ bin: { bin_id: 7, warehouse_id: 1, bin_code: 'A-a-1' } }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Item not found' }, 404));
+    post
+      .mockResolvedValueOnce(jsonResponse({
+        stock_entry_id: 92,
+        discovery_id: 55,
+        item: { sku: 'SCAN-4006381333931', item_name: 'Produs nou' },
+        quantity_added: 2,
+        quantity_in_bin: 2,
+        catalog_status: 'PENDING',
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({ summary: { matched: 0, not_found: 1 } }))
+      .mockResolvedValueOnce(jsonResponse({ summary: { matched: 1 } }));
+
+    render(<StockEntry />);
+    fireEvent.change(screen.getByLabelText('Cod locație / bin'), { target: { value: 'A-a-1' } });
+    fireEvent.submit(screen.getByLabelText('Cod locație / bin').closest('form'));
+    await screen.findByText('LOCAȚIE ACTIVĂ');
+    fireEvent.change(screen.getByLabelText('EAN (opțional)'), { target: { value: '4006381333931' } });
+    fireEvent.submit(screen.getByLabelText('EAN (opțional)').closest('form'));
+    await screen.findByText('TECDOC ÎN AȘTEPTARE');
+    fireEvent.change(screen.getByLabelText('Cod producător pentru echivalare (opțional)'), { target: { value: 'ATK 03.03.054' } });
+    fireEvent.change(screen.getByLabelText('Cantitate'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adaugă și încearcă echivalarea' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+    expect(post.mock.calls[0][1]).toMatchObject({ ean: '4006381333931', product_code: 'ATK 03.03.054', quantity: 2 });
+    expect(post.mock.calls[1]).toEqual(['/catalog-discovery/queue/bulk-match', { discovery_ids: [55] }]);
+    expect(post.mock.calls[2]).toEqual(['/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [55] }]);
+    expect(await screen.findByText(/Produs echivalat automat în Connex după codul producătorului/)).toBeInTheDocument();
+    expect(screen.queryByText('În așteptare TecDoc')).not.toBeInTheDocument();
+  });
+
   it('permite crearea unei locații scanate care nu există', async () => {
     get.mockResolvedValueOnce(jsonResponse({ error: 'Bin not found' }, 404));
     post.mockResolvedValueOnce(jsonResponse({

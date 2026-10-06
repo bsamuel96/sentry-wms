@@ -200,6 +200,7 @@ export default function Items() {
     { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} onImageOpen={setExpandedImage} />, csvValue: (r) => r.tecdoc_name || r.item_name },
     { key: 'upc', label: 'EAN', mono: true, render: (r) => r.upc || '-' },
     { key: 'default_bin_code', label: 'Locație', mono: true, render: (r) => r.default_bin_code || '\u2013' },
+    { key: 'quantity_on_hand', label: 'Bucăți adăugate', render: (r) => Number(r.quantity_on_hand || 0).toLocaleString('ro-RO') },
     { key: 'local_price', label: 'Preț Local cu TVA', render: (r) => r.local_pricing?.price ? `${Number(r.local_pricing.price).toFixed(2)} RON` : 'Fără preț' },
     { key: 'category', label: 'Categorie', render: (r) => r.category || '-' },
     { key: 'is_active', label: 'Stare', render: (r) => r.is_active ? 'Activ' : 'Arhivat' },
@@ -213,7 +214,7 @@ export default function Items() {
 
   const invCols = [
     { key: 'bin_code', label: 'Bin', mono: true },
-    { key: 'quantity_on_hand', label: 'On Hand' },
+    { key: 'quantity_on_hand', label: 'Bucăți adăugate' },
     { key: 'quantity_allocated', label: 'Allocated' },
   ];
 
