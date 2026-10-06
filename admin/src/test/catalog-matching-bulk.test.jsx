@@ -122,7 +122,7 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
 
     render(<CatalogMatching />);
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Selectează 4006381333931 pentru echivalare automată' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Echivalează prin Connex după EAN (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Echivalează prin Connex după cod (1)' }));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [41] }));
     expect(await screen.findByText(/1 echivalate prin Connex · 0 necesită alegere/)).toBeInTheDocument();
@@ -217,9 +217,31 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
 
     await waitFor(() => expect(get).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-matches'));
     await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-match', {
-      productId: '987', code: 'ATK 03.03.054',
+      productId: '987', code: 'ATK 03.03.054', reference: '',
     }));
     expect(await screen.findByText('4006381333931 a fost echivalat prin Connex cu ATK AUTOTECHNIK ATK 03.03.054.')).toBeInTheDocument();
+  });
+
+  it('caută și salvează Connex după codul producătorului', async () => {
+    const withProductCode = { ...discovery, product_code: 'ATK 03.03.054' };
+    let queueLoads = 0;
+    get.mockImplementation(async path => {
+      if (path.includes('/connex-matches')) return jsonResponse({
+        searchedBy: 'connex_reference',
+        matches: [{ id: '987', code: 'ATK 03.03.054', brand: 'ATK', name: 'Filtru', matchType: 'connex_reference' }],
+      });
+      queueLoads += 1;
+      return jsonResponse(queueLoads === 1 ? page([withProductCode]) : page([]));
+    });
+    post.mockResolvedValueOnce(jsonResponse({ ok: true, item_id: 91, status: 'MANUAL', source: 'connex' }));
+
+    render(<CatalogMatching />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Echivalează Connex' }));
+
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-matches?reference=ATK+03.03.054'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/catalog-discovery/queue/41/connex-match', {
+      productId: '987', code: 'ATK 03.03.054', reference: 'ATK 03.03.054',
+    }));
   });
   it('keeps saved drafts in the list, then confirms completion and removes only the finished row', async () => {
     const catalog = { name: 'Produs manual', brand: 'Marca', code: 'ABC', images: [], eans: [] };

@@ -76,11 +76,39 @@ def _unique_connex_ean_matches(payload, ean):
     return list(unique.values())
 
 
-def _connex_lookup(ean, product_id=""):
-    payload = {"ean": str(ean or "").strip()}
+def _normalized_product_code(value):
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def _unique_connex_reference_matches(payload, reference):
+    """Keep complete Connex candidates with the exact manufacturer code."""
+    if not isinstance(payload, dict):
+        return []
+    expected = _normalized_product_code(reference)
+    unique = {}
+    for candidate in payload.get("matches", []):
+        code = str(candidate.get("code") or "").strip()
+        key = (str(candidate.get("id") or "").strip(), code)
+        if expected and _normalized_product_code(code) == expected and all(key) and candidate.get("brand") and candidate.get("name"):
+            unique[key] = candidate
+    return list(unique.values())
+
+
+def _connex_lookup(*, ean="", reference="", product_id=""):
+    payload = {}
+    if str(ean or "").strip():
+        payload["ean"] = str(ean).strip()
+    if str(reference or "").strip():
+        payload["reference"] = str(reference).strip()
     if product_id:
         payload["product_id"] = str(product_id)
     return catalog_request("/api/integrations/sentry/connex-catalog", payload=payload)
+
+
+def _connex_candidates(payload, *, ean="", reference=""):
+    if reference:
+        return _unique_connex_reference_matches(payload, reference)
+    return _unique_connex_ean_matches(payload, ean)
 
 
 def _apply_match(discovery, match, actor):
@@ -123,22 +151,24 @@ def _apply_match(discovery, match, actor):
 
 
 def _apply_connex_match(discovery, match, actor):
-    """Persist an exact Connex EAN identity as a Sentry-owned Local product."""
+    """Persist an exact Connex identity as a Sentry-owned Local product."""
     brand = str(match.get("brand") or "").strip()
     name = str(match.get("name") or "").strip()
     matched_code = str(match.get("code") or "").strip()
     product_id = str(match.get("id") or "").strip()
     category = str(match.get("category") or "Connex").strip()[:100] or "Connex"
     description = str(match.get("description") or name).strip()[:1000]
+    scanned_ean = discovery.scanned_ean if _is_searchable_ean(discovery.scanned_ean) else ""
     eans = list(dict.fromkeys(
         str(value or "").strip()
-        for value in ([discovery.scanned_ean, match.get("ean")] + list(match.get("eans") or []))
-        if str(value or "").strip()
+        for value in ([scanned_ean, match.get("ean")] + list(match.get("eans") or []))
+        if _is_searchable_ean(value)
     ))[:50]
+    match_type = "connex_reference" if match.get("matchType") == "connex_reference" else "connex_ean"
     payload = {
         **match,
         "source": "connex",
-        "matchType": "connex_ean",
+        "matchType": match_type,
         "name": name,
         "brand": brand,
         "code": matched_code,
@@ -153,7 +183,7 @@ def _apply_connex_match(discovery, match, actor):
         SET item_name = :name,
             description = :description,
             mpn = :code,
-            upc = :ean,
+            upc = COALESCE(NULLIF(:ean, ''), upc),
             barcode_aliases = CAST(:aliases AS jsonb),
             category = :category,
             updated_at = NOW()
@@ -163,7 +193,7 @@ def _apply_connex_match(discovery, match, actor):
         "name": name[:200],
         "description": description,
         "code": matched_code[:64],
-        "ean": discovery.scanned_ean,
+        "ean": eans[0] if eans else "",
         "aliases": json.dumps(eans),
         "category": category,
     })
@@ -171,7 +201,7 @@ def _apply_connex_match(discovery, match, actor):
         UPDATE item_catalog_discoveries
         SET status = 'MANUAL', tecdoc_article_id = NULL,
             tecdoc_code = :code, tecdoc_brand = :brand, tecdoc_name = :name,
-            tecdoc_match_type = 'connex_ean', tecdoc_payload = CAST(:payload AS jsonb),
+            tecdoc_match_type = :match_type, tecdoc_payload = CAST(:payload AS jsonb),
             reviewed_by = :actor, reviewed_at = NOW(), updated_at = NOW()
         WHERE discovery_id = :id
     """), {
@@ -179,6 +209,7 @@ def _apply_connex_match(discovery, match, actor):
         "code": matched_code,
         "brand": brand,
         "name": name,
+        "match_type": match_type,
         "payload": json.dumps(payload),
         "actor": actor,
     })
@@ -359,18 +390,25 @@ def queue_match(discovery_id):
 @with_db
 def queue_connex_matches(discovery_id):
     row = g.db.execute(
-        text("SELECT scanned_ean FROM item_catalog_discoveries WHERE discovery_id = :id"),
+        text("""
+            SELECT d.scanned_ean, i.mpn
+            FROM item_catalog_discoveries d
+            JOIN items i ON i.item_id = d.item_id
+            WHERE d.discovery_id = :id
+        """),
         {"id": discovery_id},
     ).fetchone()
     if not row:
         return jsonify({"error": "Produsul de verificat nu există."}), 404
-    if not _is_searchable_ean(row.scanned_ean):
-        return jsonify({"error": "Codul scanat nu este un EAN valid pentru căutarea Connex."}), 422
+    reference = str(request.args.get("reference") or row.mpn or "").strip()
+    ean = row.scanned_ean if not reference and _is_searchable_ean(row.scanned_ean) else ""
+    if not reference and not ean:
+        return jsonify({"error": "Introdu codul producătorului pentru căutarea Connex."}), 422
     try:
-        lookup = _connex_lookup(row.scanned_ean)
+        lookup = _connex_lookup(ean=ean, reference=reference)
         return jsonify({
-            "searchedBy": "connex_ean",
-            "matches": _unique_connex_ean_matches(lookup, row.scanned_ean),
+            "searchedBy": "connex_reference" if reference else "connex_ean",
+            "matches": _connex_candidates(lookup, ean=ean, reference=reference),
         })
     except CatalogDiscoveryError as exc:
         return jsonify({"error": str(exc)}), exc.status
@@ -383,9 +421,10 @@ def queue_connex_matches(discovery_id):
 def queue_connex_match(discovery_id):
     body = request.get_json(silent=True) or {}
     discovery = g.db.execute(text("""
-        SELECT discovery_id, item_id, scanned_ean, status
-        FROM item_catalog_discoveries
-        WHERE discovery_id = :id
+        SELECT d.discovery_id, d.item_id, d.scanned_ean, d.status, i.mpn
+        FROM item_catalog_discoveries d
+        JOIN items i ON i.item_id = d.item_id
+        WHERE d.discovery_id = :id
         FOR UPDATE
     """), {"id": discovery_id}).fetchone()
     if not discovery:
@@ -396,11 +435,15 @@ def queue_connex_match(discovery_id):
     code = str(body.get("code") or "").strip()
     if not product_id or not code:
         return jsonify({"error": "Alege un produs Connex valid."}), 422
+    reference = str(body.get("reference") or discovery.mpn or "").strip()
+    ean = discovery.scanned_ean if not reference and _is_searchable_ean(discovery.scanned_ean) else ""
+    if not reference and not ean:
+        return jsonify({"error": "Introdu codul producătorului pentru căutarea Connex."}), 422
     try:
-        lookup = _connex_lookup(discovery.scanned_ean, product_id)
+        lookup = _connex_lookup(ean=ean, reference=reference, product_id=product_id)
     except CatalogDiscoveryError as exc:
         return jsonify({"error": str(exc)}), exc.status
-    match = next((candidate for candidate in _unique_connex_ean_matches(lookup, discovery.scanned_ean)
+    match = next((candidate for candidate in _connex_candidates(lookup, ean=ean, reference=reference)
                   if str(candidate.get("id") or "") == product_id
                   and str(candidate.get("code") or "") == code), None)
     if not match:
@@ -555,8 +598,10 @@ def queue_bulk_match_connex():
     discoveries = []
     for discovery_id in discovery_ids:
         row = g.db.execute(text("""
-            SELECT discovery_id, item_id, scanned_ean, status
-            FROM item_catalog_discoveries WHERE discovery_id = :id
+            SELECT d.discovery_id, d.item_id, d.scanned_ean, d.status, i.mpn
+            FROM item_catalog_discoveries d
+            JOIN items i ON i.item_id = d.item_id
+            WHERE d.discovery_id = :id
         """), {"id": discovery_id}).fetchone()
         if row:
             discoveries.append(row)
@@ -566,17 +611,23 @@ def queue_bulk_match_connex():
     for discovery in discoveries:
         if discovery.status != "PENDING":
             results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "already_reviewed"})
-        elif not _is_searchable_ean(discovery.scanned_ean):
-            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "invalid_ean"})
+        elif not str(discovery.mpn or "").strip() and not _is_searchable_ean(discovery.scanned_ean):
+            results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "skipped", "reason": "missing_identifier"})
         else:
             candidates.append(discovery)
 
     def lookup_connex(discovery):
-        initial = _unique_connex_ean_matches(_connex_lookup(discovery.scanned_ean), discovery.scanned_ean)
+        reference = str(discovery.mpn or "").strip()
+        ean = discovery.scanned_ean if not reference else ""
+        initial = _connex_candidates(
+            _connex_lookup(ean=ean, reference=reference),
+            ean=ean,
+            reference=reference,
+        )
         if len(initial) != 1:
             return initial
-        refreshed = _connex_lookup(discovery.scanned_ean, initial[0]["id"])
-        return _unique_connex_ean_matches(refreshed, discovery.scanned_ean)
+        refreshed = _connex_lookup(ean=ean, reference=reference, product_id=initial[0]["id"])
+        return _connex_candidates(refreshed, ean=ean, reference=reference)
 
     resolved = []
     if candidates:
@@ -590,9 +641,9 @@ def queue_bulk_match_connex():
                     results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "error", "reason": "lookup_failed", "error": str(exc)})
                     continue
                 if not matches:
-                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "not_found", "reason": "no_exact_ean"})
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "not_found", "reason": "no_exact_reference" if discovery.mpn else "no_exact_ean"})
                 elif len(matches) > 1:
-                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "ambiguous", "reason": "multiple_exact_ean"})
+                    results.append({"discovery_id": discovery.discovery_id, "ean": discovery.scanned_ean, "status": "ambiguous", "reason": "multiple_exact_reference" if discovery.mpn else "multiple_exact_ean"})
                 else:
                     resolved.append((discovery, matches[0]))
 

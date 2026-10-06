@@ -17,7 +17,7 @@ const STATUS_OPTIONS = [
 
 function statusLabel(rowOrStatus) {
   const row = typeof rowOrStatus === 'object' ? rowOrStatus : { status: rowOrStatus };
-  if (row.status === 'MANUAL' && row.tecdoc_match_type === 'connex_ean') return 'Echivalat Connex';
+  if (row.status === 'MANUAL' && ['connex_ean', 'connex_reference'].includes(row.tecdoc_match_type)) return 'Echivalat Connex';
   if (row.status === 'MANUAL') return 'Identificat manual';
   if (row.status === 'MATCHED') return 'Echivalat';
   if (row.status === 'IGNORED') return 'Ignorat';
@@ -25,7 +25,7 @@ function statusLabel(rowOrStatus) {
 }
 
 function statusTag(row) {
-  const className = row.status === 'MATCHED' || row.tecdoc_match_type === 'connex_ean' ? 'tag-success' : row.status === 'IGNORED' ? 'tag-gray' : 'tag-info';
+  const className = row.status === 'MATCHED' || ['connex_ean', 'connex_reference'].includes(row.tecdoc_match_type) ? 'tag-success' : row.status === 'IGNORED' ? 'tag-gray' : 'tag-info';
   return <span className={`tag ${className}`}>{statusLabel(row)}</span>;
 }
 
@@ -48,6 +48,7 @@ export default function CatalogMatching() {
   const [connexBulkLoading, setConnexBulkLoading] = useState(false);
   const [connexBulkResult, setConnexBulkResult] = useState(null);
   const [connexMatches, setConnexMatches] = useState([]);
+  const [connexSearchReference, setConnexSearchReference] = useState('');
   const [connexLoading, setConnexLoading] = useState(false);
   const [connexError, setConnexError] = useState('');
   const [connexSavingId, setConnexSavingId] = useState('');
@@ -171,6 +172,7 @@ export default function CatalogMatching() {
     setMatchError('');
     setSearchedBy('');
     setConnexMatches([]);
+    setConnexSearchReference('');
     setConnexError('');
     if (row.status === 'PENDING' && canSearchScannedCodeInTecDoc(row.ean)) findMatches(row, '');
   }
@@ -182,17 +184,23 @@ export default function CatalogMatching() {
     setMatchError('');
     setSearchedBy('');
     setConnexMatches([]);
+    setConnexSearchReference('');
     setConnexError('');
     findConnexMatches(row);
   }
 
-  async function findConnexMatches(row = selected) {
+  async function findConnexMatches(row = selected, nextReference = reference) {
     if (!row || connexLoading) return;
+    const searchReference = String(nextReference || row.product_code || '').trim();
     setConnexLoading(true);
     setConnexError('');
     setConnexMatches([]);
+    setConnexSearchReference(searchReference);
     try {
-      const response = await api.get(`/catalog-discovery/queue/${row.discovery_id}/connex-matches`);
+      const params = new URLSearchParams();
+      if (searchReference) params.set('reference', searchReference);
+      const suffix = params.toString() ? `?${params}` : '';
+      const response = await api.get(`/catalog-discovery/queue/${row.discovery_id}/connex-matches${suffix}`);
       if (!response?.ok) {
         const payload = await response?.json();
         throw new Error(payload?.error || 'Connex nu a răspuns.');
@@ -200,11 +208,13 @@ export default function CatalogMatching() {
       const payload = await response.json();
       const nextMatches = payload.matches || [];
       if (nextMatches.length === 1) {
-        await chooseConnexMatch(nextMatches[0], row);
+        await chooseConnexMatch(nextMatches[0], row, searchReference);
         return;
       }
       setConnexMatches(nextMatches);
-      if (!nextMatches.length) setConnexError('Connex nu a returnat niciun produs cu acest EAN exact.');
+      if (!nextMatches.length) setConnexError(searchReference
+        ? 'Connex nu a returnat niciun produs cu acest cod producător exact.'
+        : 'Connex nu a returnat niciun produs cu acest EAN exact.');
     } catch (lookupError) {
       setConnexError(lookupError.message || 'Connex nu a răspuns.');
     } finally {
@@ -212,7 +222,7 @@ export default function CatalogMatching() {
     }
   }
 
-  async function chooseConnexMatch(match, target = selected) {
+  async function chooseConnexMatch(match, target = selected, matchReference = connexSearchReference) {
     if (!target || connexSavingId) return;
     const discoveryId = Number(target.discovery_id);
     const scannedCode = target.ean;
@@ -222,6 +232,7 @@ export default function CatalogMatching() {
       const response = await api.post(`/catalog-discovery/queue/${target.discovery_id}/connex-match`, {
         productId: match.id,
         code: match.code,
+        reference: matchReference,
       });
       if (!response?.ok) {
         const payload = await response?.json();
@@ -458,7 +469,7 @@ export default function CatalogMatching() {
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={!canSearchScannedCodeInTecDoc(row.ean) || connexLoading || Boolean(connexSavingId)}
+            disabled={!(row.product_code || canSearchScannedCodeInTecDoc(row.ean)) || connexLoading || Boolean(connexSavingId)}
             onClick={(event) => { event.stopPropagation(); openConnexReview(row); }}
           >
             {connexLoading && selected?.discovery_id === row.discovery_id ? 'Se caută în Connex…' : 'Echivalează Connex'}
@@ -475,7 +486,7 @@ export default function CatalogMatching() {
     <div>
       <PageHeader title="Produse neechivalate" />
       <p style={{ margin: '-8px 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-        Caută produsele după EAN în TecDoc sau Connex. Un singur rezultat exact se salvează automat; rezultatele multiple cer alegerea ta.
+        Caută produsele după EAN în TecDoc sau după codul producătorului în Connex. Un singur rezultat exact se salvează automat; rezultatele multiple cer alegerea ta.
       </p>
       <div className="filter-bar">
         <select className="form-select" value={status} onChange={(event) => { resetBulkSelection(); setStatus(event.target.value); setPage(1); }} style={{ width: 180 }}>
@@ -489,10 +500,10 @@ export default function CatalogMatching() {
           {bulkLoading ? 'Se echivalează…' : `Echivalează automat după EAN (${selectedIds.size})`}
         </button>
         <button type="button" className="btn btn-primary" onClick={bulkMatchSelectedConnex} disabled={!selectedIds.size || bulkLoading || connexBulkLoading}>
-          {connexBulkLoading ? 'Se caută în Connex…' : `Echivalează prin Connex după EAN (${selectedIds.size})`}
+          {connexBulkLoading ? 'Se caută în Connex…' : `Echivalează prin Connex după cod (${selectedIds.size})`}
         </button>
         <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-          Produsele fără EAN valid pot fi selectate, dar automatizarea le omite; deschide rândul pentru echivalare manuală.
+          Connex folosește codul producătorului când există și EAN-ul doar ca fallback pentru produsele vechi.
         </span>
       </div>
       <div className="filter-bar">
@@ -571,7 +582,7 @@ export default function CatalogMatching() {
             <span className="detail-label">Stoc</span><span>{selected.quantity_on_hand} buc.</span>
             <span className="detail-label">Locații</span><span>{(selected.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—'}</span>
             <span className="detail-label">Stare</span><span>{statusLabel(selected)}</span>
-            {selected.tecdoc_code ? <><span className="detail-label">{selected.tecdoc_match_type === 'connex_ean' ? 'Connex' : selected.status === 'MANUAL' ? 'Identitate manuală' : 'TecDoc'}</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
+            {selected.tecdoc_code ? <><span className="detail-label">{['connex_ean', 'connex_reference'].includes(selected.tecdoc_match_type) ? 'Connex' : selected.status === 'MANUAL' ? 'Identitate manuală' : 'TecDoc'}</span><span>{[selected.tecdoc_brand, selected.tecdoc_code, selected.tecdoc_name].filter(Boolean).join(' · ')}</span></> : null}
           </div>
 
           {selected.status === 'PENDING' ? (
@@ -582,7 +593,7 @@ export default function CatalogMatching() {
                   <input className="form-input" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Ex: C113" style={{ width: '100%' }} />
                 </label>
                 <button type="button" className="btn btn-primary" onClick={() => findMatches()} disabled={matchLoading || (!reference.trim() && !canSearchScannedCodeInTecDoc(selected.ean))}>{matchLoading ? 'Se caută…' : 'Caută în TecDoc'}</button>
-                <button type="button" className="btn btn-primary" onClick={() => findConnexMatches()} disabled={connexLoading || !canSearchScannedCodeInTecDoc(selected.ean)}>{connexLoading ? 'Se caută în Connex…' : 'Caută în Connex după EAN'}</button>
+                <button type="button" className="btn btn-primary" onClick={() => findConnexMatches(selected, reference)} disabled={connexLoading || !(reference.trim() || selected.product_code || canSearchScannedCodeInTecDoc(selected.ean))}>{connexLoading ? 'Se caută în Connex…' : 'Caută în Connex după cod producător'}</button>
               </div>
               {!canSearchScannedCodeInTecDoc(selected.ean) && !reference.trim() ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Codul scanat este păstrat în Autosav WMS. Introdu o referință de pe piesă sau ambalaj pentru echivalarea TecDoc.</p> : null}
               {matchError ? <div className="alert alert-error" role="alert">{matchError}</div> : null}
@@ -611,7 +622,7 @@ export default function CatalogMatching() {
                     <div style={{ minWidth: 0 }}>
                       <strong>{match.brand} · {match.name}</strong>
                       <div className="mono" style={{ marginTop: 4 }}>{match.code}</div>
-                      <small style={{ display: 'block', marginTop: 4, color: 'var(--text-secondary)' }}>Connex · EAN exact</small>
+                      <small style={{ display: 'block', marginTop: 4, color: 'var(--text-secondary)' }}>{match.matchType === 'connex_reference' ? 'Connex · cod producător exact' : 'Connex · EAN exact'}</small>
                     </div>
                     <button type="button" className="btn btn-primary" onClick={() => chooseConnexMatch(match)} disabled={Boolean(connexSavingId)}>{connexSavingId === String(match.id) ? 'Se salvează…' : 'Alege Connex'}</button>
                   </div>

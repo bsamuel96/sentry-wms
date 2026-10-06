@@ -299,6 +299,37 @@ def test_connex_ean_lookup_and_choice_store_local_catalog(client, auth_headers, 
     assert local_catalog.get_json()["catalog"]["references"][0]["code"] == "OE1"
 
 
+def test_connex_manufacturer_code_lookup_does_not_store_the_scanned_code_as_ean(client, auth_headers, monkeypatch):
+    discovery_id, item_id = create_discovery("LOCAL-SCAN-42")
+    query("UPDATE items SET mpn=%s, upc=NULL WHERE item_id=%s", ("ATK 03.03.054", item_id))
+    match = {**connex_match("5901234123457"), "matchType": "connex_reference"}
+    calls = []
+
+    def lookup(path, **kwargs):
+        calls.append((path, kwargs))
+        return {"searchedBy": "connex_reference", "matches": [match]}
+
+    monkeypatch.setattr(routes, "catalog_request", lookup)
+    matches = client.get(
+        f"/api/catalog-discovery/queue/{discovery_id}/connex-matches?reference=ATK%2003.03.054",
+        headers=auth_headers,
+    )
+    assert matches.status_code == 200, matches.get_data(as_text=True)
+    assert calls[-1][1]["payload"] == {"reference": "ATK 03.03.054"}
+
+    saved = client.post(
+        f"/api/catalog-discovery/queue/{discovery_id}/connex-match",
+        headers=auth_headers,
+        json={"productId": "987", "code": "ATK 03.03.054", "reference": "ATK 03.03.054"},
+    )
+    assert saved.status_code == 200, saved.get_data(as_text=True)
+    assert query("SELECT upc,mpn FROM items WHERE item_id=%s", (item_id,)) == [("5901234123457", "ATK 03.03.054")]
+    assert query(
+        "SELECT status,tecdoc_match_type FROM item_catalog_discoveries WHERE item_id=%s",
+        (item_id,),
+    ) == [("MANUAL", "connex_reference")]
+
+
 def test_bulk_connex_ean_match_applies_only_one_exact_candidate(client, auth_headers, monkeypatch):
     exact_id, exact_item_id = create_discovery("4006381333931")
     ambiguous_id, ambiguous_item_id = create_discovery("5901234123457")
