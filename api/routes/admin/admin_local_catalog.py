@@ -41,14 +41,24 @@ def _item(item_id, lock=False):
 
 
 def _serialize(item):
+    catalog = dict(item.tecdoc_payload or {
+        'name': item.item_name, 'code': item.mpn or '', 'brand': '',
+        'eans': [item.upc] if item.upc else [], 'images': [], 'references': [],
+        'category': item.category or '', 'description': item.description or '',
+    })
+    stored_images = [url_for(
+        'admin.get_catalog_image', image_id=row.image_id,
+        _external=True, _scheme='https',
+    ) for row in g.db.execute(text('''
+        SELECT image_id FROM catalog_product_images
+        WHERE item_id = :id ORDER BY created_at, image_id
+    '''), {'id': item.item_id}).fetchall()]
+    catalog['images'] = list(dict.fromkeys([*(catalog.get('images') or []), *stored_images]))
+    catalog['imageUrl'] = next(iter(catalog['images']), None)
     return {
         'item_id': item.item_id, 'external_id': str(item.external_id),
         'sku': item.sku, 'status': item.status,
-        'catalog': item.tecdoc_payload or {
-            'name': item.item_name, 'code': item.mpn or '', 'brand': '',
-            'eans': [item.upc] if item.upc else [], 'images': [], 'references': [],
-            'category': item.category or '', 'description': item.description or '',
-        },
+        'catalog': catalog,
         'pricing': item.local_pricing or {},
         'audit': {
             'created_by': item.created_by,
@@ -358,6 +368,47 @@ def upload_catalog_image(item_id):
         'mime_type': image['mime_type'],
         'file_size': image['file_size'],
     }), 201
+
+
+@admin_bp.route('/items/<int:item_id>/catalog-images/batch', methods=['POST'])
+@require_auth
+@require_admin_or_page_permission('items')
+@with_db
+def add_catalog_images(item_id):
+    """Store uploaded and linked images without changing catalogue review state."""
+    item = _item(item_id)
+    if not item:
+        return jsonify({'error': 'Produsul nu există.'}), 404
+    uploads = request.files.getlist('files')
+    try:
+        links = json.loads(request.form.get('links') or '[]')
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Lista linkurilor de imagini este invalidă.'}), 422
+    if not isinstance(links, list) or any(not isinstance(link, str) for link in links):
+        return jsonify({'error': 'Lista linkurilor de imagini este invalidă.'}), 422
+    existing_count = int(g.db.execute(
+        text('SELECT COUNT(*) FROM catalog_product_images WHERE item_id = :id'),
+        {'id': item_id},
+    ).scalar() or 0)
+    if not uploads and not links:
+        return jsonify({'error': 'Adaugă cel puțin o imagine.'}), 422
+    if existing_count + len(uploads) + len(links) > 10:
+        return jsonify({'error': 'Produsul poate avea maximum 10 fotografii stocate pe server.'}), 409
+    try:
+        images = [_catalog_image_upload(upload) for upload in uploads]
+        images.extend(_download_catalog_image(link.strip()) for link in links)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except OverflowError as exc:
+        return jsonify({'error': str(exc)}), 413
+    except TypeError as exc:
+        return jsonify({'error': str(exc)}), 415
+    actor = str(g.current_user.get('username') or 'unknown')
+    for image in images:
+        _insert_catalog_image(item_id, image, actor)
+    _audit(item_id, 'CATALOG_IMAGES_ADD', {'count': len(images)})
+    g.db.commit()
+    return jsonify(_serialize(_item(item_id))), 201
 
 
 @admin_bp.route('/catalog-images/<uuid:image_id>', methods=['GET'])

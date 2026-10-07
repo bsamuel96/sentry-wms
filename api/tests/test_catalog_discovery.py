@@ -1,5 +1,6 @@
 """Discovery proxy tests use only the dedicated fixture database and mocked AutoSav."""
 from io import BytesIO
+import json
 import uuid
 from types import SimpleNamespace
 from urllib.parse import urlparse
@@ -440,6 +441,42 @@ def test_pasted_catalog_image_is_downloaded_and_replaced_with_server_url(client,
     served = client.get(urlparse(stored_url).path)
     assert served.status_code == 200
     assert served.data == content
+
+
+def test_batch_images_work_for_matched_product_without_changing_review_state(client, auth_headers, monkeypatch):
+    discovery_id, item_id = create_discovery()
+    query("UPDATE item_catalog_discoveries SET status='MATCHED' WHERE discovery_id=%s", (discovery_id,))
+    linked_content = b"\xff\xd8\xff\xe0linked-product-photo"
+
+    class ImageResponse:
+        status_code = 200
+        headers = {"Content-Length": str(len(linked_content))}
+
+        def iter_content(self, chunk_size):
+            return iter((linked_content,))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(admin_local_catalog, 'resolve_url_addresses', lambda _url: ['93.184.216.34'])
+    monkeypatch.setattr(admin_local_catalog.requests, 'get', lambda *_args, **_kwargs: ImageResponse())
+    response = client.post(
+        f"/api/admin/items/{item_id}/catalog-images/batch",
+        headers=auth_headers,
+        data={
+            "files": (BytesIO(b"\x89PNG\r\n\x1a\nlocal-product-photo"), "local.png"),
+            "links": json.dumps(["https://images.example.test/product.jpg"]),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 201, response.get_data(as_text=True)
+    assert len(response.get_json()["catalog"]["images"]) == 2
+    assert query(
+        "SELECT status FROM item_catalog_discoveries WHERE discovery_id=%s", (discovery_id,),
+    ) == [("MATCHED",)]
+    assert query(
+        "SELECT COUNT(*) FROM catalog_product_images WHERE item_id=%s", (item_id,),
+    ) == [(2,)]
 
 
 def test_pasted_catalog_image_rejects_private_addresses_without_changing_product(client, auth_headers, monkeypatch):

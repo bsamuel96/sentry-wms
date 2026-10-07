@@ -7,6 +7,14 @@ class TestItemLookup:
         assert data["item"]["upc"] == "100000000001"
         assert len(data["locations"]) >= 1, "Item should have at least one location"
 
+    def test_lookup_item_by_external_id(self, client, auth_headers):
+        external_id = client.get(
+            "/api/lookup/item/100000000001", headers=auth_headers
+        ).get_json()["item"]["external_id"]
+        resp = client.get(f"/api/lookup/item/{external_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.get_json()["item"]["item_id"] == 1
+
     def test_lookup_item_not_found(self, client, auth_headers):
         resp = client.get("/api/lookup/item/999999999999", headers=auth_headers)
         assert resp.status_code == 404

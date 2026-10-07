@@ -67,6 +67,7 @@ def lookup_item(barcode):
             WHERE i.upc = :barcode
                OR i.sku = :barcode
                OR i.mpn = :barcode
+               OR i.external_id::text = :barcode
                OR i.barcode_aliases @> CAST(:barcode_json AS jsonb)
             LIMIT 1
             """
