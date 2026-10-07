@@ -54,9 +54,9 @@ describe('introducere marfă prin scanare în web', () => {
     fireEvent.submit(screen.getByLabelText('Cod locație / bin').closest('form'));
     expect(await screen.findByText('LOCAȚIE ACTIVĂ')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('EAN (opțional)'), { target: { value: '5941234567890' } });
-    fireEvent.change(screen.getByLabelText('Cod producător (opțional)'), { target: { value: 'ATK 03.03.054' } });
-    fireEvent.submit(screen.getByLabelText('EAN (opțional)').closest('form'));
+    fireEvent.change(screen.getByLabelText(/^Cod producător/), { target: { value: 'ATK 03.03.054' } });
+    fireEvent.change(screen.getByLabelText(/^EAN \/ cod de bare/), { target: { value: '5941234567890' } });
+    fireEvent.submit(screen.getByLabelText(/^Cod producător/).closest('form'));
     expect(await screen.findByText('TECDOC ÎN AȘTEPTARE')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Cantitate'), { target: { value: '3' } });
@@ -74,7 +74,7 @@ describe('introducere marfă prin scanare în web', () => {
     expect(post.mock.calls[0][1].idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
     expect(await screen.findByText('3 în locație')).toBeInTheDocument();
     expect(screen.getByText('A-a-1')).toBeInTheDocument();
-    expect(screen.getByLabelText('EAN (opțional)')).toHaveFocus();
+    expect(screen.getByLabelText(/^Cod producător/)).toHaveFocus();
   });
 
   it('permite identificarea numai prin codul producătorului, inclusiv cu spații', async () => {
@@ -89,15 +89,15 @@ describe('introducere marfă prin scanare în web', () => {
     fireEvent.submit(screen.getByLabelText('Cod locație / bin').closest('form'));
     expect(await screen.findByText('LOCAȚIE ACTIVĂ')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Cod producător (opțional)'), { target: { value: 'ATK 03.03.054' } });
-    fireEvent.submit(screen.getByLabelText('Cod producător (opțional)').closest('form'));
+    fireEvent.change(screen.getByLabelText(/^Cod producător/), { target: { value: 'ATK 03.03.054' } });
+    fireEvent.submit(screen.getByLabelText(/^Cod producător/).closest('form'));
 
     expect(await screen.findByText('TECDOC ÎN AȘTEPTARE')).toBeInTheDocument();
     expect(get).toHaveBeenLastCalledWith('/lookup/item/ATK%2003.03.054?allow_missing=1');
     expect(screen.getByText('COD PRODUCĂTOR ATK 03.03.054')).toBeInTheDocument();
   });
 
-  it('adaugă stocul și încearcă echivalarea TecDoc apoi Connex', async () => {
+  it('adaugă stocul și încearcă echivalarea prioritar după codul producătorului', async () => {
     get
       .mockResolvedValueOnce(jsonResponse({ bin: { bin_id: 7, warehouse_id: 1, bin_code: 'A-a-1' } }))
       .mockResolvedValueOnce(jsonResponse({ error: 'Item not found' }, 404));
@@ -110,24 +110,22 @@ describe('introducere marfă prin scanare în web', () => {
         quantity_in_bin: 2,
         catalog_status: 'PENDING',
       }, 201))
-      .mockResolvedValueOnce(jsonResponse({ summary: { matched: 0, not_found: 1 } }))
       .mockResolvedValueOnce(jsonResponse({ summary: { matched: 1 } }));
 
     render(<StockEntry />);
     fireEvent.change(screen.getByLabelText('Cod locație / bin'), { target: { value: 'A-a-1' } });
     fireEvent.submit(screen.getByLabelText('Cod locație / bin').closest('form'));
     await screen.findByText('LOCAȚIE ACTIVĂ');
-    fireEvent.change(screen.getByLabelText('EAN (opțional)'), { target: { value: '4006381333931' } });
-    fireEvent.submit(screen.getByLabelText('EAN (opțional)').closest('form'));
+    fireEvent.change(screen.getByLabelText(/^EAN \/ cod de bare/), { target: { value: '4006381333931' } });
+    fireEvent.submit(screen.getByLabelText(/^EAN \/ cod de bare/).closest('form'));
     await screen.findByText('TECDOC ÎN AȘTEPTARE');
-    fireEvent.change(screen.getByLabelText('Cod producător pentru echivalare (opțional)'), { target: { value: 'ATK 03.03.054' } });
+    fireEvent.change(screen.getByLabelText('Cod producător pentru echivalare'), { target: { value: 'ATK 03.03.054' } });
     fireEvent.change(screen.getByLabelText('Cantitate'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Adaugă și încearcă echivalarea' }));
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
     expect(post.mock.calls[0][1]).toMatchObject({ ean: '4006381333931', product_code: 'ATK 03.03.054', quantity: 2 });
-    expect(post.mock.calls[1]).toEqual(['/catalog-discovery/queue/bulk-match', { discovery_ids: [55] }]);
-    expect(post.mock.calls[2]).toEqual(['/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [55] }]);
+    expect(post.mock.calls[1]).toEqual(['/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [55] }]);
     expect(await screen.findByText(/Produs echivalat automat în Connex după codul producătorului/)).toBeInTheDocument();
     expect(screen.queryByText('În așteptare TecDoc')).not.toBeInTheDocument();
   });

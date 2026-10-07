@@ -34,7 +34,7 @@ async function readError(response, fallback) {
 
 function WarehouseStockEntry({ warehouseId, warehouse }) {
   const binInputRef = useRef(null);
-  const productInputRef = useRef(null);
+  const manufacturerCodeInputRef = useRef(null);
   const [binCode, setBinCode] = useState('');
   const [bin, setBin] = useState(null);
   const [newBinCode, setNewBinCode] = useState('');
@@ -57,7 +57,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
     setItem(null);
     setEntryKey('');
     setQuantity('1');
-    if (focus) window.setTimeout(() => productInputRef.current?.focus(), 0);
+    if (focus) window.setTimeout(() => manufacturerCodeInputRef.current?.focus(), 0);
   }
 
   const selectBin = useCallback(async (rawCode) => {
@@ -120,7 +120,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
   const selectProduct = useCallback(async (rawEan, rawManufacturerCode) => {
     const nextEan = String(rawEan || '').trim();
     const nextManufacturerCode = String(rawManufacturerCode || '').trim();
-    const lookupCode = nextEan || nextManufacturerCode;
+    const lookupCode = nextManufacturerCode || nextEan;
     if (!bin) {
       setError('Scanează mai întâi locația.');
       return;
@@ -179,14 +179,6 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
 
   async function tryCatalogMatch(discoveryId) {
     if (!discoveryId) return { matched: false, message: 'Produsul nu are o înregistrare de echivalat.' };
-    if (ean.trim()) {
-      const response = await api.post('/catalog-discovery/queue/bulk-match', { discovery_ids: [discoveryId] });
-      if (!response?.ok) throw new Error(await readError(response, 'TecDoc nu a putut fi verificat.'));
-      const result = await response.json();
-      if (Number(result.summary?.matched || 0) > 0) {
-        return { matched: true, message: 'Produs echivalat automat în TecDoc.' };
-      }
-    }
     if (manufacturerCode.trim()) {
       const response = await api.post('/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [discoveryId] });
       if (!response?.ok) throw new Error(await readError(response, 'Connex nu a putut fi verificat.'));
@@ -195,11 +187,19 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
         return { matched: true, message: 'Produs echivalat automat în Connex după codul producătorului.' };
       }
     }
+    if (ean.trim()) {
+      const response = await api.post('/catalog-discovery/queue/bulk-match', { discovery_ids: [discoveryId] });
+      if (!response?.ok) throw new Error(await readError(response, 'TecDoc nu a putut fi verificat.'));
+      const result = await response.json();
+      if (Number(result.summary?.matched || 0) > 0) {
+        return { matched: true, message: 'Produs echivalat automat în TecDoc.' };
+      }
+    }
     return { matched: false, message: 'Nu s-a găsit încă o echivalare exactă; produsul rămâne în Produse neechivalate.' };
   }
 
   async function saveEntry(tryMatch = false) {
-    const lookupCode = ean.trim() || manufacturerCode.trim();
+    const lookupCode = manufacturerCode.trim() || ean.trim();
     if (!warehouseId || !bin?.bin_id || !lookupCode || !entryKey || busy) return;
     if (quantityNumber < 1 || quantityNumber > 100000) {
       setError('Cantitatea trebuie să fie între 1 și 100000.');
@@ -338,17 +338,29 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
             <span className="stock-entry-step-number">{item ? '✓' : '2'}</span>
             <div>
               <h2>Scanează produsul</h2>
-              <p>Poți folosi EAN, UPC, SKU sau codul tipărit de furnizor.</p>
+              <p>Introdu codul producătorului. EAN-ul este un identificator secundar, opțional.</p>
             </div>
           </div>
 
           {bin && !item ? (
             <form className="stock-entry-product-form" onSubmit={submitProduct}>
               <div className="stock-entry-product-fields">
-                <label className="stock-entry-input-wrap">
-                  <span>EAN (opțional)</span>
+                <label className="stock-entry-input-wrap stock-entry-product-code-primary">
+                  <span>Cod producător</span>
                   <input
-                    ref={productInputRef}
+                    ref={manufacturerCodeInputRef}
+                    className="form-input mono"
+                    value={manufacturerCode}
+                    onChange={(event) => setManufacturerCode(event.target.value)}
+                    placeholder="Scanează sau introdu codul producătorului"
+                    autoComplete="off"
+                    disabled={Boolean(busy)}
+                  />
+                  <small>Identificator principal pentru căutare și echivalare</small>
+                </label>
+                <label className="stock-entry-input-wrap stock-entry-product-code-secondary">
+                  <span>EAN / cod de bare (opțional)</span>
+                  <input
                     className="form-input mono"
                     value={ean}
                     onChange={(event) => setEan(event.target.value)}
@@ -356,17 +368,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
                     autoComplete="off"
                     disabled={Boolean(busy)}
                   />
-                </label>
-                <label className="stock-entry-input-wrap">
-                  <span>Cod producător (opțional)</span>
-                  <input
-                    className="form-input mono"
-                    value={manufacturerCode}
-                    onChange={(event) => setManufacturerCode(event.target.value)}
-                    placeholder="Introdu codul producătorului"
-                    autoComplete="off"
-                    disabled={Boolean(busy)}
-                  />
+                  <small>Folosit ca identificator suplimentar</small>
                 </label>
               </div>
               <div className="stock-entry-product-actions">
@@ -380,10 +382,10 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
             <div className="stock-entry-product">
               <div className="stock-entry-product-summary">
                 <div>
-                  <strong className="mono">{item.sku || ean || manufacturerCode}</strong>
+                  <strong className="mono">{manufacturerCode || item.sku || ean}</strong>
                   <span>{item.item_name || 'Produs'}</span>
                   {ean ? <small className="mono">EAN {ean}</small> : null}
-                  {manufacturerCode ? <small className="mono">COD PRODUCĂTOR {manufacturerCode}</small> : null}
+                  {manufacturerCode ? <small className="mono stock-entry-primary-identity">COD PRODUCĂTOR {manufacturerCode}</small> : null}
                 </div>
                 <span className={`tag ${pendingItem ? 'tag-info' : 'tag-success'}`}>
                   {pendingItem ? 'TECDOC ÎN AȘTEPTARE' : 'IDENTIFICAT'}
@@ -392,7 +394,7 @@ function WarehouseStockEntry({ warehouseId, warehouse }) {
               {pendingItem ? (
                 <div className="stock-entry-product-fields">
                   <label className="stock-entry-input-wrap">
-                    <span>Cod producător pentru echivalare (opțional)</span>
+                    <span>Cod producător pentru echivalare</span>
                     <input
                       className="form-input mono"
                       value={manufacturerCode}
