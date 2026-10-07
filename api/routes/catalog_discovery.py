@@ -13,7 +13,7 @@ from middleware.auth_middleware import (
 )
 from middleware.db import with_db
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
-from services.catalog_media import catalog_image_urls
+from services.catalog_media import catalog_image_urls, catalog_oil_viscosity
 from services.audit_service import write_audit_log
 
 catalog_discovery_bp = Blueprint("catalog_discovery", __name__)
@@ -233,6 +233,7 @@ def _apply_connex_match(discovery, match, actor):
 
 def _serialize_discovery(row):
     images = catalog_image_urls(row.tecdoc_payload)
+    viscosity = catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
     return {
         "discovery_id": row.discovery_id,
         "item_id": row.item_id,
@@ -252,6 +253,7 @@ def _serialize_discovery(row):
         "tecdoc_match_type": row.tecdoc_match_type,
         "image_url": images[0] if images else None,
         "images": images,
+        "viscosity": viscosity,
         "quantity_on_hand": int(row.quantity_on_hand or 0),
         "locations": row.locations or [],
     }

@@ -198,6 +198,7 @@ export default function Items() {
 
   const columns = [
     { key: 'item_name', label: 'Produs', render: (r) => <ProductIdentity item={r} onImageOpen={setExpandedImage} />, csvValue: (r) => r.tecdoc_name || r.item_name },
+    { key: 'viscosity', label: 'Vâscozitate', render: (r) => r.viscosity || '—' },
     { key: 'upc', label: 'EAN', mono: true, render: (r) => r.upc || '-' },
     { key: 'default_bin_code', label: 'Locație', mono: true, render: (r) => r.default_bin_code || '\u2013' },
     { key: 'quantity_on_hand', label: 'Bucăți adăugate', render: (r) => Number(r.quantity_on_hand || 0).toLocaleString('ro-RO') },

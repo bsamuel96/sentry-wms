@@ -26,7 +26,7 @@ from schemas.items import CreateItemRequest, CreatePreferredBinRequest, UpdateIt
 from services.audit_service import write_audit_log
 from services.events_service import emit_event, get_user_external_id
 from services.local_catalog import update_pricing
-from services.catalog_media import catalog_image_urls
+from services.catalog_media import catalog_image_urls, catalog_oil_viscosity
 from services.inventory_service import (
     add_inventory,
     set_inventory_quantity,
@@ -136,6 +136,7 @@ def list_items():
 
 def _serialize_admin_item(row):
     images = catalog_image_urls(row.tecdoc_payload)
+    viscosity = catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
     return {
         "item_id": row.item_id,
         "sku": row.sku,
@@ -158,6 +159,7 @@ def _serialize_admin_item(row):
         "tecdoc_match_type": row.tecdoc_match_type,
         "image_url": images[0] if images else None,
         "images": images,
+        "viscosity": viscosity,
     }
 
 
@@ -206,6 +208,7 @@ def get_item(item_id):
     ).fetchall()
 
     images = catalog_image_urls(item.tecdoc_payload)
+    viscosity = catalog_oil_viscosity(item.tecdoc_payload, item.tecdoc_name, item.item_name)
     return jsonify({
         "item": {
             "item_id": item.item_id, "sku": item.sku, "item_name": item.item_name,
@@ -228,6 +231,7 @@ def get_item(item_id):
             "tecdoc_match_type": item.tecdoc_match_type,
             "image_url": images[0] if images else None,
             "images": images,
+            "viscosity": viscosity,
         },
         # inventory_id is the row identity the admin grid keys on.
         # bin_id alone is not unique here: inventory is UNIQUE(item_id,

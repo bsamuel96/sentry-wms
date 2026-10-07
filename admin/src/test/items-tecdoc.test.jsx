@@ -39,6 +39,7 @@ describe('catalogul de produse TecDoc', () => {
         tecdoc_code: 'C113',
         tecdoc_brand: 'DOLZ',
         tecdoc_name: 'Pompă apă',
+        viscosity: '5W-30',
         image_url: 'https://cdn.example.test/c113.jpg', quantity_on_hand: 27,
       }],
       total: 1,
@@ -56,6 +57,8 @@ describe('catalogul de produse TecDoc', () => {
     expect(screen.getByText('4006381333931')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Bucăți adăugate' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Vâscozitate' })).toBeInTheDocument();
+    expect(screen.getByText('5W-30')).toBeInTheDocument();
     expect(screen.getAllByText('TecDoc')).toHaveLength(2);
   });
 

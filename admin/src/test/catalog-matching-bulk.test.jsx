@@ -27,6 +27,7 @@ const discovery = {
   ean: '4006381333931',
   sku: 'SCAN-4006381333931',
   item_name: 'Produs nou – 4006381333931',
+  viscosity: '10W-40',
   quantity_on_hand: 3,
   locations: [{ bin_code: 'A-a-1', quantity: 3 }],
   status: 'PENDING',
@@ -60,6 +61,8 @@ describe('echivalarea TecDoc în masă și ștergerea produselor scanate', () =>
     });
     render(<CatalogMatching />);
     await screen.findByRole('checkbox');
+    expect(screen.getByRole('columnheader', { name: 'Vâscozitate' })).toBeInTheDocument();
+    expect(screen.getByText('10W-40')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Echivalează toate în TecDoc' }));
     expect(await screen.findByText('6 / 7 verificate')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('value', '6');

@@ -1,5 +1,7 @@
 """Safe extraction of product media persisted in TecDoc discovery payloads."""
 import json
+import re
+import unicodedata
 from urllib.parse import urlparse
 
 
@@ -64,3 +66,61 @@ def catalog_image_urls(payload, *, limit=10):
         if len(result) >= limit:
             break
     return result
+
+
+def _plain_key(value):
+    return ''.join(
+        char for char in unicodedata.normalize('NFD', str(value or '').lower())
+        if unicodedata.category(char) != 'Mn'
+    )
+
+
+def _format_viscosity(value):
+    text = re.sub(r'\s+', ' ', str(value or '').strip()).upper()
+    match = re.fullmatch(r'(\d{1,3})\s*W\s*[- ]?\s*(\d{1,3})', text)
+    if match:
+        return f'{match.group(1)}W-{match.group(2)}'
+    return text or None
+
+
+def catalog_oil_viscosity(payload, *fallback_texts):
+    """Extract the oil viscosity without classifying unrelated products as oil."""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    direct = []
+    searchable = []
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized_key = _plain_key(key)
+                if normalized_key in ('viscosity', 'viscozitate', 'vascozitate') and not isinstance(child, (dict, list)):
+                    direct.append(child)
+                visit(child)
+            label = next((value.get(key) for key in (
+                'name', 'label', 'criteriaName', 'criteriaDescription', 'description', 'propertyName', 'ProductPropertyName'
+            ) if value.get(key)), None)
+            if label and any(word in _plain_key(label) for word in ('viscosity', 'viscozitate', 'vascozitate')):
+                candidate = next((value.get(key) for key in (
+                    'formattedValue', 'value', 'displayValue', 'criteriaValue', 'rawValue', 'PropertyValue'
+                ) if value.get(key) not in (None, '')), None)
+                if candidate is not None:
+                    direct.append(candidate)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+        elif isinstance(value, str):
+            searchable.append(value)
+
+    visit(payload)
+    for value in direct:
+        formatted = _format_viscosity(value)
+        if formatted:
+            return formatted
+    text = ' '.join([*searchable, *(str(value or '') for value in fallback_texts)])
+    match = re.search(r'(?<![A-Z0-9])(\d{1,3})\s*W\s*[- ]?\s*(\d{1,3})(?!\d)', text, re.IGNORECASE)
+    return _format_viscosity(f'{match.group(1)}W-{match.group(2)}') if match else None

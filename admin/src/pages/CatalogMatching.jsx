@@ -456,6 +456,7 @@ export default function CatalogMatching() {
     ) },
     { key: 'ean', label: 'Cod scanat', mono: true },
     { key: 'item_name', label: 'Produs curent' },
+    { key: 'viscosity', label: 'Vâscozitate', render: (row) => row.viscosity || '—' },
     { key: 'quantity_on_hand', label: 'Bucăți adăugate', render: (row) => Number(row.quantity_on_hand || 0).toLocaleString('ro-RO') },
     { key: 'locations', label: 'Locații', render: (row) => (row.locations || []).map((location) => `${location.bin_code}: ${location.quantity}`).join(' · ') || '—' },
     { key: 'status', label: 'Stare', render: (row) => statusTag(row) },
