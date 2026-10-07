@@ -1,4 +1,4 @@
-from services.catalog_media import catalog_image_urls, catalog_oil_viscosity
+from services.catalog_media import catalog_image_urls, catalog_is_oil_product, catalog_oil_viscosity
 
 
 def test_catalog_image_urls_deduplicates_and_rejects_unsafe_urls():
@@ -31,3 +31,8 @@ def test_catalog_oil_viscosity_reads_direct_criteria_and_product_names():
 
 def test_catalog_oil_viscosity_does_not_invent_a_value_for_non_oil_products():
     assert catalog_oil_viscosity({'name': 'Filtru de ulei MANN W 79'}) is None
+
+
+def test_catalog_is_oil_product_excludes_parts_that_only_reference_oil():
+    assert catalog_is_oil_product({'category': 'Uleiuri', 'name': 'MOTUL SPECIFIC'}) is True
+    assert catalog_is_oil_product({'name': 'Filtru de ulei MANN W 79'}) is False

@@ -259,6 +259,8 @@ def connex_match(ean="4006381333931", product_id="987"):
         "eans": [ean],
         "images": ["https://cdn.example.test/atk.jpg"],
         "references": [{"code": "OE1", "type": "OE", "manufacturer": "VW"}],
+        "viscosity": "5W-30",
+        "technicalAttributes": [{"label": "Vâscozitate", "value": "5W30"}],
     }
 
 
@@ -295,6 +297,7 @@ def test_connex_ean_lookup_and_choice_store_local_catalog(client, auth_headers, 
         "SELECT item_name,mpn,category,upc FROM items WHERE item_id=%s",
         (item_id,),
     ) == [("Filtru combustibil", "ATK 03.03.054", "Filtre", "4006381333931")]
+    assert query("SELECT viscosity FROM items WHERE item_id=%s", (item_id,)) == [("5W-30",)]
     local_catalog = client.get(f"/api/admin/items/{item_id}/local-catalog", headers=auth_headers)
     assert local_catalog.status_code == 200
     assert local_catalog.get_json()["catalog"]["references"][0]["code"] == "OE1"
@@ -316,7 +319,7 @@ def test_connex_manufacturer_code_lookup_does_not_store_the_scanned_code_as_ean(
         headers=auth_headers,
     )
     assert matches.status_code == 200, matches.get_data(as_text=True)
-    assert calls[-1][0] == "/api/integrations/sentry/connex-prices"
+    assert calls[-1][0] == "/api/integrations/sentry/connex-catalog"
     assert calls[-1][1]["payload"] == {"reference": "ATK 03.03.054"}
 
     saved = client.post(

@@ -73,6 +73,7 @@ CREATE TABLE items (
     description VARCHAR(1000),
     upc VARCHAR(50),                       -- primary barcode
     mpn VARCHAR(64),                        -- manufacturer part number (mig 079)
+    viscosity VARCHAR(32),                  -- normalized oil grade, e.g. 5W-30 (mig 086)
     local_pricing JSONB NOT NULL DEFAULT '{}'::jsonb,
     barcode_aliases JSONB,                 -- array of alternate barcodes
     category VARCHAR(100),

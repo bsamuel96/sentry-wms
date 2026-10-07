@@ -124,3 +124,34 @@ def catalog_oil_viscosity(payload, *fallback_texts):
     text = ' '.join([*searchable, *(str(value or '') for value in fallback_texts)])
     match = re.search(r'(?<![A-Z0-9])(\d{1,3})\s*W\s*[- ]?\s*(\d{1,3})(?!\d)', text, re.IGNORECASE)
     return _format_viscosity(f'{match.group(1)}W-{match.group(2)}') if match else None
+
+
+def catalog_is_oil_product(payload, *fallback_texts):
+    """Identify lubricants while excluding parts whose names merely mention oil."""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    if catalog_oil_viscosity(payload, *fallback_texts):
+        return True
+    values = []
+
+    def visit(value):
+        if isinstance(value, dict):
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+        elif isinstance(value, str):
+            values.append(value)
+
+    visit(payload)
+    plain = _plain_key(' '.join([*values, *(str(value or '') for value in fallback_texts)]))
+    excluded = r'(?:filtru|filter|baie|pompa|senzor|buson|racitor)'
+    oil = r'(?:ulei(?:uri)?|oil|lubrifiant(?:i)?)'
+    if re.search(fr'{excluded}.{{0,16}}{oil}|{oil}.{{0,16}}{excluded}', plain):
+        return False
+    return bool(re.search(fr'\b{oil}\b', plain))

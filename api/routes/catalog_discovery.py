@@ -100,19 +100,7 @@ def _connex_lookup(*, ean="", reference="", product_id=""):
         payload = {"reference": clean_reference}
         if product_id:
             payload["product_id"] = str(product_id)
-        quote_payload = catalog_request("/api/integrations/sentry/connex-prices", payload=payload)
-        matches = [{
-            **candidate,
-            "source": "connex",
-            "matchType": "connex_reference",
-            "description": candidate.get("name") or "",
-            "category": "Connex",
-            "ean": None,
-            "eans": [],
-            "images": [],
-            "references": [],
-        } for candidate in quote_payload.get("matches", [])]
-        return {"searchedBy": "connex_reference", "reference": clean_reference, "matches": matches}
+        return catalog_request("/api/integrations/sentry/connex-catalog", payload=payload)
 
     payload = {"ean": str(ean or "").strip()}
     if product_id:
@@ -131,12 +119,14 @@ def _apply_match(discovery, match, actor):
     name = str(match.get("name") or "").strip()
     matched_code = str(match.get("code") or "").strip()
     article_id = str(match.get("id") or "").strip()
+    viscosity = catalog_oil_viscosity(match, name)
     item_name = " · ".join(value for value in (brand, name) if value)[:200] or f"Produs {discovery.scanned_ean}"
     g.db.execute(text("""
         UPDATE items
         SET item_name = :name,
             description = :description,
             mpn = NULLIF(:code, ''),
+            viscosity = :viscosity,
             category = 'TecDoc',
             updated_at = NOW()
         WHERE item_id = :iid
@@ -145,6 +135,7 @@ def _apply_match(discovery, match, actor):
         "name": item_name,
         "description": f"Identificat în TecDoc: {brand} {matched_code}".strip(),
         "code": matched_code,
+        "viscosity": viscosity,
     })
     g.db.execute(text("""
         UPDATE item_catalog_discoveries
@@ -173,6 +164,7 @@ def _apply_connex_match(discovery, match, actor):
     product_id = str(match.get("id") or "").strip()
     category = str(match.get("category") or "Connex").strip()[:100] or "Connex"
     description = str(match.get("description") or name).strip()[:1000]
+    viscosity = catalog_oil_viscosity(match, name)
     scanned_ean = discovery.scanned_ean if _is_searchable_ean(discovery.scanned_ean) else ""
     eans = list(dict.fromkeys(
         str(value or "").strip()
@@ -200,6 +192,7 @@ def _apply_connex_match(discovery, match, actor):
             mpn = :code,
             upc = COALESCE(NULLIF(:ean, ''), upc),
             barcode_aliases = CAST(:aliases AS jsonb),
+            viscosity = :viscosity,
             category = :category,
             updated_at = NOW()
         WHERE item_id = :iid
@@ -210,6 +203,7 @@ def _apply_connex_match(discovery, match, actor):
         "code": matched_code[:64],
         "ean": eans[0] if eans else "",
         "aliases": json.dumps(eans),
+        "viscosity": viscosity,
         "category": category,
     })
     g.db.execute(text("""
@@ -233,7 +227,7 @@ def _apply_connex_match(discovery, match, actor):
 
 def _serialize_discovery(row):
     images = catalog_image_urls(row.tecdoc_payload)
-    viscosity = catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
+    viscosity = row.viscosity or catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
     return {
         "discovery_id": row.discovery_id,
         "item_id": row.item_id,
@@ -276,7 +270,7 @@ def queue():
         conditions.append("d.status = :status")
         params["status"] = status
     if query:
-        conditions.append("(d.scanned_ean ILIKE :query OR i.sku ILIKE :query OR i.mpn ILIKE :query OR i.item_name ILIKE :query)")
+        conditions.append("(d.scanned_ean ILIKE :query OR i.sku ILIKE :query OR i.mpn ILIKE :query OR i.item_name ILIKE :query OR i.viscosity ILIKE :query)")
         params["query"] = f"%{query}%"
     where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
     total = g.db.execute(text(f"""
@@ -290,7 +284,7 @@ def queue():
                d.created_by, d.created_at, d.reviewed_by, d.reviewed_at,
                d.tecdoc_article_id, d.tecdoc_code, d.tecdoc_brand,
                d.tecdoc_name, d.tecdoc_match_type, d.tecdoc_payload,
-               i.sku, i.mpn, i.item_name,
+               i.sku, i.mpn, i.item_name, i.viscosity,
                COALESCE(SUM(inv.quantity_on_hand), 0) AS quantity_on_hand,
                COALESCE(
                    jsonb_agg(

@@ -78,7 +78,7 @@ def list_items():
         # alias match they have to look up the item manually.
         where_clauses.append(
             "(i.sku ILIKE :search OR i.item_name ILIKE :search "
-            "OR i.upc ILIKE :search OR i.mpn ILIKE :search OR EXISTS (SELECT 1 FROM "
+            "OR i.upc ILIKE :search OR i.mpn ILIKE :search OR i.viscosity ILIKE :search OR EXISTS (SELECT 1 FROM "
             "jsonb_array_elements_text(COALESCE(i.barcode_aliases, '[]'::jsonb)) "
             "AS alias(code) WHERE alias.code ILIKE :search))"
         )
@@ -93,7 +93,7 @@ def list_items():
     params["offset"] = (page - 1) * per_page
     rows = g.db.execute(
         text(f"""
-            SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.weight_lbs,
+            SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.viscosity, i.weight_lbs,
                    i.default_bin_id, i.is_active, i.created_at, i.local_pricing,
                    b.bin_code AS default_bin_code,
                    COALESCE((
@@ -136,7 +136,7 @@ def list_items():
 
 def _serialize_admin_item(row):
     images = catalog_image_urls(row.tecdoc_payload)
-    viscosity = catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
+    viscosity = row.viscosity or catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
     return {
         "item_id": row.item_id,
         "sku": row.sku,
@@ -171,7 +171,7 @@ def get_item(item_id):
     item = g.db.execute(
         text("""
             SELECT i.item_id, i.sku, i.item_name, i.description, i.upc,
-                   i.mpn, i.barcode_aliases, i.category, i.weight_lbs,
+                   i.mpn, i.barcode_aliases, i.category, i.viscosity, i.weight_lbs,
                    i.length_in, i.width_in, i.height_in, i.default_bin_id,
                    i.reorder_point, i.reorder_qty, i.is_lot_tracked,
                    i.is_serial_tracked, i.is_active, i.created_at, i.updated_at, i.local_pricing,
@@ -208,7 +208,7 @@ def get_item(item_id):
     ).fetchall()
 
     images = catalog_image_urls(item.tecdoc_payload)
-    viscosity = catalog_oil_viscosity(item.tecdoc_payload, item.tecdoc_name, item.item_name)
+    viscosity = item.viscosity or catalog_oil_viscosity(item.tecdoc_payload, item.tecdoc_name, item.item_name)
     return jsonify({
         "item": {
             "item_id": item.item_id, "sku": item.sku, "item_name": item.item_name,
