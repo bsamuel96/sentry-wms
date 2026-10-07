@@ -25,6 +25,9 @@ LOCAL_CATALOG_PRICING_MIGRATION_PATH = (
 CATALOG_PRODUCT_IMAGES_MIGRATION_PATH = (
     REPO_ROOT / "db" / "migrations" / "085_catalog_product_images.sql"
 )
+OIL_VISCOSITY_MIGRATION_PATH = (
+    REPO_ROOT / "db" / "migrations" / "086_items_oil_viscosity.sql"
+)
 BOOTSTRAP_LOCK_ID = 7_493_367_791
 
 
@@ -90,6 +93,13 @@ def _ensure_catalog_product_images_schema(cursor) -> None:
     if not CATALOG_PRODUCT_IMAGES_MIGRATION_PATH.is_file():
         raise RuntimeError("Catalogue product image migration is missing")
     cursor.execute(CATALOG_PRODUCT_IMAGES_MIGRATION_PATH.read_text(encoding="utf-8"))
+
+
+def _ensure_oil_viscosity_schema(cursor) -> None:
+    """Persist normalized oil viscosity before catalogue routes start."""
+    if not OIL_VISCOSITY_MIGRATION_PATH.is_file():
+        raise RuntimeError("Oil viscosity migration is missing")
+    cursor.execute(OIL_VISCOSITY_MIGRATION_PATH.read_text(encoding="utf-8"))
 
 
 def _seed_minimal_install(cursor, admin_password: str) -> None:
@@ -210,6 +220,7 @@ def main() -> None:
                     _ensure_mobile_stock_entry_schema(cursor)
                     _ensure_local_catalog_pricing_schema(cursor)
                     _ensure_catalog_product_images_schema(cursor)
+                    _ensure_oil_viscosity_schema(cursor)
                     print(
                         "Sentry WMS database is already initialized; additive schema and "
                         "runtime indexes verified."
