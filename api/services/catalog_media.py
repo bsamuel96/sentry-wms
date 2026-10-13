@@ -155,3 +155,25 @@ def catalog_is_oil_product(payload, *fallback_texts):
     if re.search(fr'{excluded}.{{0,16}}{oil}|{oil}.{{0,16}}{excluded}', plain):
         return False
     return bool(re.search(fr'\b{oil}\b', plain))
+
+
+_OIL_PART_WORDS = r'\b(?:filtr\w*|filters?|baie|pompa|pump|senzor|sensor|buson|racitor|garnitura|gasket|bec\w*|bulbs?|lamp\w*)\b'
+_OIL_WORDS = r'\b(?:ulei(?:uri|ul)?|oils?|lubrifiant(?:i)?)\b'
+
+
+def catalog_item_oil_viscosity(payload, *texts):
+    """Viscosity for a lubricant item only; parts and bulbs never get one."""
+    plain_names = _plain_key(' '.join(str(value or '') for value in texts))
+    if re.search(_OIL_PART_WORDS, plain_names):
+        return None
+    viscosity = catalog_oil_viscosity(payload, *texts)
+    if not viscosity:
+        return None
+    if isinstance(payload, str):
+        payload_text = payload
+    else:
+        try:
+            payload_text = json.dumps(payload or {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            payload_text = ''
+    return viscosity if re.search(_OIL_WORDS, f'{plain_names} {_plain_key(payload_text)}') else None

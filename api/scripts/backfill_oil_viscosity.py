@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from models.database import SessionLocal
 from services.catalog_discovery import CatalogDiscoveryError, catalog_request
-from services.catalog_media import catalog_oil_viscosity
+from services.catalog_media import catalog_item_oil_viscosity
 
 
 def _payload(value):
@@ -31,15 +31,15 @@ def run(*, dry_run=False):
                    d.discovery_id, d.tecdoc_code, d.tecdoc_name,
                    d.tecdoc_match_type, d.tecdoc_payload
             FROM items i
-            JOIN item_catalog_discoveries d ON d.item_id = i.item_id
+            LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
             WHERE i.viscosity IS NULL
-              AND d.status IN ('MATCHED', 'MANUAL')
+              AND (d.item_id IS NULL OR d.status IN ('MATCHED', 'MANUAL'))
             ORDER BY i.item_id
         """)).fetchall()
         for row in rows:
             summary["scanned"] += 1
             saved_payload = _payload(row.tecdoc_payload)
-            viscosity = catalog_oil_viscosity(saved_payload, row.tecdoc_name, row.item_name)
+            viscosity = catalog_item_oil_viscosity(saved_payload, row.tecdoc_name, row.item_name)
             refreshed_payload = None
 
             if viscosity:
@@ -60,7 +60,7 @@ def run(*, dry_run=False):
                         )
                         if match:
                             refreshed_payload = {**saved_payload, **match}
-                            viscosity = catalog_oil_viscosity(refreshed_payload, row.tecdoc_name, row.item_name)
+                            viscosity = catalog_item_oil_viscosity(refreshed_payload, row.tecdoc_name, row.item_name)
                     except CatalogDiscoveryError:
                         summary["failed"] += 1
                         continue

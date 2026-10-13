@@ -13,7 +13,7 @@ from middleware.auth_middleware import (
 )
 from middleware.db import with_db
 from services.catalog_discovery import catalog_request, CatalogDiscoveryError
-from services.catalog_media import catalog_image_urls, catalog_oil_viscosity
+from services.catalog_media import catalog_image_urls, catalog_item_oil_viscosity
 from services.audit_service import write_audit_log
 
 catalog_discovery_bp = Blueprint("catalog_discovery", __name__)
@@ -119,7 +119,7 @@ def _apply_match(discovery, match, actor):
     name = str(match.get("name") or "").strip()
     matched_code = str(match.get("code") or "").strip()
     article_id = str(match.get("id") or "").strip()
-    viscosity = catalog_oil_viscosity(match, name)
+    viscosity = catalog_item_oil_viscosity(match, name)
     item_name = " · ".join(value for value in (brand, name) if value)[:200] or f"Produs {discovery.scanned_ean}"
     g.db.execute(text("""
         UPDATE items
@@ -164,7 +164,7 @@ def _apply_connex_match(discovery, match, actor):
     product_id = str(match.get("id") or "").strip()
     category = str(match.get("category") or "Connex").strip()[:100] or "Connex"
     description = str(match.get("description") or name).strip()[:1000]
-    viscosity = catalog_oil_viscosity(match, name)
+    viscosity = catalog_item_oil_viscosity(match, name)
     scanned_ean = discovery.scanned_ean if _is_searchable_ean(discovery.scanned_ean) else ""
     eans = list(dict.fromkeys(
         str(value or "").strip()
@@ -227,7 +227,7 @@ def _apply_connex_match(discovery, match, actor):
 
 def _serialize_discovery(row):
     images = catalog_image_urls(row.tecdoc_payload)
-    viscosity = row.viscosity or catalog_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
+    viscosity = row.viscosity or catalog_item_oil_viscosity(row.tecdoc_payload, row.tecdoc_name, row.item_name)
     return {
         "discovery_id": row.discovery_id,
         "item_id": row.item_id,

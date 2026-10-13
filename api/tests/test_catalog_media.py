@@ -36,3 +36,15 @@ def test_catalog_oil_viscosity_does_not_invent_a_value_for_non_oil_products():
 def test_catalog_is_oil_product_excludes_parts_that_only_reference_oil():
     assert catalog_is_oil_product({'category': 'Uleiuri', 'name': 'MOTUL SPECIFIC'}) is True
     assert catalog_is_oil_product({'name': 'Filtru de ulei MANN W 79'}) is False
+
+
+def test_catalog_item_oil_viscosity_only_tags_lubricants():
+    from services.catalog_media import catalog_item_oil_viscosity
+
+    assert catalog_item_oil_viscosity({}, 'ULEI MOTOR CASTROL EDGE 5W30 4L') == '5W-30'
+    assert catalog_item_oil_viscosity(
+        {'criteria': [{'criteriaDescription': 'Vâscozitate', 'formattedValue': '0W20'}], 'category': 'Ulei motor'},
+        'MOTUL 8100 ECO-CLEAN',
+    ) == '0W-20'
+    assert catalog_item_oil_viscosity({}, 'BEC P21/5W 12V') is None
+    assert catalog_item_oil_viscosity({}, 'Filtru ulei MANN 5W30 compatibil') is None

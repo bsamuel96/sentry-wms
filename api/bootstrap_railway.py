@@ -28,6 +28,9 @@ CATALOG_PRODUCT_IMAGES_MIGRATION_PATH = (
 OIL_VISCOSITY_MIGRATION_PATH = (
     REPO_ROOT / "db" / "migrations" / "086_items_oil_viscosity.sql"
 )
+STOCKED_OIL_VISCOSITY_BACKFILL_PATH = (
+    REPO_ROOT / "db" / "migrations" / "087_backfill_stocked_oil_viscosity.sql"
+)
 BOOTSTRAP_LOCK_ID = 7_493_367_791
 
 
@@ -100,6 +103,40 @@ def _ensure_oil_viscosity_schema(cursor) -> None:
     if not OIL_VISCOSITY_MIGRATION_PATH.is_file():
         raise RuntimeError("Oil viscosity migration is missing")
     cursor.execute(OIL_VISCOSITY_MIGRATION_PATH.read_text(encoding="utf-8"))
+
+
+def _backfill_oil_viscosity(cursor) -> int:
+    """Fill items.viscosity for lubricants from names and saved catalogue details.
+
+    Idempotent and offline: only NULL rows are touched and no supplier is
+    called, so it is safe on every boot.
+    """
+    from services.catalog_media import catalog_item_oil_viscosity
+
+    stocked = 0
+    if STOCKED_OIL_VISCOSITY_BACKFILL_PATH.is_file():
+        cursor.execute(STOCKED_OIL_VISCOSITY_BACKFILL_PATH.read_text(encoding="utf-8"))
+        stocked = max(cursor.rowcount, 0)
+    cursor.execute(
+        """
+        SELECT i.item_id, i.item_name, i.category,
+               d.tecdoc_name, d.tecdoc_payload
+          FROM items i
+          LEFT JOIN item_catalog_discoveries d ON d.item_id = i.item_id
+         WHERE i.viscosity IS NULL
+        """
+    )
+    updates = []
+    for item_id, item_name, category, tecdoc_name, payload in cursor.fetchall():
+        viscosity = catalog_item_oil_viscosity(payload, item_name, tecdoc_name, category)
+        if viscosity:
+            updates.append((viscosity[:32], item_id))
+    if updates:
+        cursor.executemany(
+            "UPDATE items SET viscosity = %s, updated_at = NOW() WHERE item_id = %s AND viscosity IS NULL",
+            updates,
+        )
+    return stocked + len(updates)
 
 
 def _seed_minimal_install(cursor, admin_password: str) -> None:
@@ -221,6 +258,8 @@ def main() -> None:
                     _ensure_local_catalog_pricing_schema(cursor)
                     _ensure_catalog_product_images_schema(cursor)
                     _ensure_oil_viscosity_schema(cursor)
+                    backfilled = _backfill_oil_viscosity(cursor)
+                    print(f"Oil viscosity backfilled for {backfilled} item(s).")
                     print(
                         "Sentry WMS database is already initialized; additive schema and "
                         "runtime indexes verified."
