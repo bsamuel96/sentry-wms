@@ -39,13 +39,14 @@ import uuid
 from typing import Optional, Tuple
 
 import psycopg2
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request, url_for
 from sqlalchemy import text
 
 from middleware.auth_middleware import require_wms_token
 from middleware.db import with_db
 from schemas.polling import SnapshotQuery
 from services.rate_limit import limiter
+from services.catalog_media import catalog_image_urls
 
 
 snapshot_bp = Blueprint("snapshot", __name__)
@@ -378,6 +379,7 @@ def _run_keyset_query(
                    d.tecdoc_brand,
                    d.tecdoc_name,
                    d.tecdoc_payload,
+                   COALESCE(catalog_media.image_ids, ARRAY[]::uuid[]) AS catalog_image_ids,
                    inv.warehouse_id,
                    b.external_id::text AS bin_external_id,
                    b.bin_code,
@@ -395,6 +397,11 @@ def _run_keyset_query(
               FROM inventory inv
               JOIN items i ON i.item_id = inv.item_id
               LEFT JOIN item_catalog_discoveries d ON d.item_id = inv.item_id
+              LEFT JOIN LATERAL (
+                    SELECT array_agg(image_id ORDER BY created_at, image_id) AS image_ids
+                      FROM catalog_product_images
+                     WHERE item_id = inv.item_id
+              ) catalog_media ON TRUE
               JOIN bins b  ON b.bin_id  = inv.bin_id
               LEFT JOIN zones z ON z.zone_id = b.zone_id
              WHERE inv.warehouse_id = %s
@@ -412,6 +419,14 @@ def _run_keyset_query(
 
     out = []
     for r in rows:
+        stored_images = [url_for(
+            'admin.get_catalog_image', image_id=image_id,
+            _external=True, _scheme='https',
+        ) for image_id in (r.get('catalog_image_ids') or [])]
+        images = list(dict.fromkeys([
+            *catalog_image_urls(r.get('tecdoc_payload')),
+            *stored_images,
+        ]))
         out.append(
             {
                 "item_external_id": r["item_external_id"],
@@ -431,6 +446,8 @@ def _run_keyset_query(
                 "tecdoc_brand": r["tecdoc_brand"],
                 "tecdoc_name": r["tecdoc_name"],
                 "tecdoc_payload": r["tecdoc_payload"],
+                "image_url": images[0] if images else None,
+                "images": images,
                 "warehouse_id": r["warehouse_id"],
                 "bin_external_id": r["bin_external_id"],
                 "bin_code": r["bin_code"],
