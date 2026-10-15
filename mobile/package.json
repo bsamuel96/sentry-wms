@@ -1,6 +1,6 @@
 {
   "name": "sentry-wms-mobile",
-  "version": "1.50.5",
+  "version": "1.50.6",
   "license": "Apache-2.0",
   "description": "Autosav WMS - Mobile Scanner App",
   "main": "expo/AppEntry.js",

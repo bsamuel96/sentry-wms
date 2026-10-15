@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { useScrollToTop } from '@react-navigation/native';
 import Text, { TextInput } from '../components/LocalizedText';
 import ScanInput from '../components/ScanInput';
+import CameraScannerModal from '../components/CameraScannerModal';
 import ScreenHeader from '../components/ScreenHeader';
 import ExpandableProductImage from '../components/ExpandableProductImage';
 import ErrorPopup from '../components/ErrorPopup';
@@ -39,6 +40,7 @@ export default function StockEntryScreen({ navigation, route }) {
   const [entryKey, setEntryKey] = useState(() => prefill ? requestId() : '');
   const [itemPreview, setItemPreview] = useState(prefill?.item || null);
   const [quantity, setQuantity] = useState('1');
+  const [productCameraVisible, setProductCameraVisible] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [lastEntries, setLastEntries] = useState([]);
   const syncingKeysRef = useRef(new Set());
@@ -47,6 +49,7 @@ export default function StockEntryScreen({ navigation, route }) {
   const quantityNumber = useMemo(() => Math.max(0, Number.parseInt(quantity, 10) || 0), [quantity]);
   const hasTecDocMatch = itemPreview?.catalog_status === 'MATCHED' || Boolean(itemPreview?.tecdoc_code);
   const isManualProduct = itemPreview?.catalog_status === 'MANUAL';
+  const hasSelectedProduct = Boolean(itemPreview);
 
   async function scanBin(barcode) {
     try {
@@ -85,28 +88,38 @@ export default function StockEntryScreen({ navigation, route }) {
     }
   }
 
-  async function scanProduct(barcode) {
-    const nextEan = normalizeScannedProductCode(barcode);
-    if (!validScannedProductCode(nextEan)) {
+  async function selectProduct(rawEan = ean, rawProductCode = productCode) {
+    const nextEan = normalizeScannedProductCode(rawEan);
+    const nextProductCode = String(rawProductCode || '').trim();
+    const lookupCode = nextProductCode || nextEan;
+    if (!lookupCode) {
+      showError('Introdu un EAN sau un cod producător.');
+      return;
+    }
+    if (nextEan && !validScannedProductCode(nextEan)) {
       showError('Scanează un cod de produs de 6–50 de caractere. Sunt acceptate cifre, litere, punct, cratimă, / și +.');
       return;
     }
+    if (nextProductCode && !/^[A-Za-z0-9][A-Za-z0-9 ._/+*-]{0,63}$/.test(nextProductCode)) {
+      showError('Codul producătorului poate avea maximum 64 de caractere.');
+      return;
+    }
     setEan(nextEan);
-    setProductCode('');
+    setProductCode(nextProductCode);
     setPrice('');
     setPriceChanged(false);
     setEntryKey(requestId());
     setQuantity('1');
     try {
-      const response = await client.get(`/api/lookup/item/${encodeURIComponent(nextEan)}`);
+      const response = await client.get(`/api/lookup/item/${encodeURIComponent(lookupCode)}?allow_missing=1`);
       const nextItem = response.data?.item || null;
-      setItemPreview(nextItem);
-      setProductCode(String(nextItem?.mpn || nextItem?.product_code || '').trim());
+      setItemPreview(nextItem || { sku: `SCAN-${lookupCode}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
+      setProductCode(nextProductCode || String(nextItem?.mpn || nextItem?.product_code || '').trim());
       setPrice(nextItem?.local_pricing?.price == null ? '' : String(nextItem.local_pricing.price));
       setPriceChanged(false);
     } catch (lookupError) {
       if (lookupError.response?.status === 404) {
-        setItemPreview({ sku: `SCAN-${nextEan}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
+        setItemPreview({ sku: `SCAN-${lookupCode}`, item_name: 'Produs nou · va fi echivalat ulterior în TecDoc', provisional: true });
         return;
       }
       setEan('');
@@ -117,6 +130,12 @@ export default function StockEntryScreen({ navigation, route }) {
       setItemPreview(null);
       showError(lookupError.response?.data?.error || 'Produsul nu a putut fi verificat.');
     }
+  }
+
+  function handleProductCameraScan(scannedEan) {
+    setProductCameraVisible(false);
+    setEan(scannedEan);
+    selectProduct(scannedEan, productCode);
   }
 
   function clearProduct() {
@@ -143,7 +162,7 @@ export default function StockEntryScreen({ navigation, route }) {
       const response = await client.post('/api/inventory/stock-entry', {
         warehouse_id: entry.warehouseId,
         bin_id: entry.binId,
-        barcode: entry.ean,
+        ean: entry.ean,
         product_code: entry.productCode,
         ...(entry.priceChanged ? { price: entry.price } : {}),
         quantity: entry.quantity,
@@ -152,6 +171,25 @@ export default function StockEntryScreen({ navigation, route }) {
         idempotency_key: entry.entryKey,
       }, { timeout: 20000 });
       const result = response.data;
+      let matched = result.catalog_status !== 'PENDING';
+      let matchMessage = '';
+      if (entry.tryMatch && result.catalog_status === 'PENDING' && result.discovery_id) {
+        try {
+          if (entry.productCode) {
+            const matchResponse = await client.post('/api/catalog-discovery/queue/bulk-match-connex', { discovery_ids: [result.discovery_id] });
+            matched = Number(matchResponse.data?.summary?.matched || 0) > 0;
+            if (matched) matchMessage = 'Echivalat automat după codul producătorului.';
+          }
+          if (!matched && entry.ean) {
+            const matchResponse = await client.post('/api/catalog-discovery/queue/bulk-match', { discovery_ids: [result.discovery_id] });
+            matched = Number(matchResponse.data?.summary?.matched || 0) > 0;
+            if (matched) matchMessage = 'Echivalat automat în TecDoc.';
+          }
+          if (!matched) matchMessage = 'Nu s-a găsit o echivalare exactă.';
+        } catch {
+          matchMessage = 'Echivalarea nu a putut fi verificată acum.';
+        }
+      }
       setLastEntries((current) => current.map((row) => (row.id === entry.id ? {
         ...row,
         serverId: result.stock_entry_id,
@@ -162,7 +200,8 @@ export default function StockEntryScreen({ navigation, route }) {
         tecdocBrand: result.item?.tecdoc_brand || row.tecdocBrand || '',
         quantity: result.quantity_added,
         total: result.quantity_in_bin,
-        pending: result.catalog_status === 'PENDING',
+        pending: result.catalog_status === 'PENDING' && !matched,
+        matchMessage,
         imageUrl: result.item?.image_url || row.imageUrl || null,
         syncing: false,
         failed: false,
@@ -177,8 +216,8 @@ export default function StockEntryScreen({ navigation, route }) {
     }
   }
 
-  function addToBin() {
-    if (!warehouseId || !bin?.bin_id || !ean || !entryKey || !itemPreview || quantityNumber < 1) return;
+  function addToBin(tryMatch = false) {
+    if (!warehouseId || !bin?.bin_id || !(ean || productCode.trim()) || !entryKey || !itemPreview || quantityNumber < 1) return;
     const normalizedPrice = price.trim().replace(',', '.');
     const priceNumber = normalizedPrice ? Number(normalizedPrice) : null;
     if (priceChanged && normalizedPrice && (!Number.isFinite(priceNumber) || priceNumber < 0.01 || priceNumber > 100000000)) {
@@ -195,7 +234,7 @@ export default function StockEntryScreen({ navigation, route }) {
       productCode: productCode.trim(),
       price: priceNumber,
       priceChanged: priceChanged && priceNumber != null,
-      sku: itemPreview.tecdoc_code || itemPreview.sku || ean,
+      sku: itemPreview.tecdoc_code || itemPreview.sku || productCode || ean,
       name: itemPreview.tecdoc_name || itemPreview.item_name || 'Produs',
       tecdocBrand: itemPreview.tecdoc_brand || '',
       quantity: quantityNumber,
@@ -204,6 +243,7 @@ export default function StockEntryScreen({ navigation, route }) {
       imageUrl: itemPreview.image_url || itemPreview.images?.[0] || null,
       syncing: true,
       failed: false,
+      tryMatch,
     };
     // Reflect the physical scan immediately. The idempotency key keeps the
     // background request and any manual retry safe against double stock.
@@ -282,50 +322,100 @@ export default function StockEntryScreen({ navigation, route }) {
         )}
 
         <View style={[styles.stepHeader, !bin && styles.inactive]}>
-          <View style={[styles.stepNumber, ean && styles.stepDone]}><Text style={styles.stepNumberText}>{ean ? '✓' : '2'}</Text></View>
-          <View style={styles.stepCopy}><Text style={styles.stepTitle}>{ean ? 'Produs selectat' : 'Scanează produsul'}</Text><Text style={styles.stepHint}>Cod cunoscut sau produs nou pentru echivalare ulterioară.</Text></View>
+          <View style={[styles.stepNumber, hasSelectedProduct && styles.stepDone]}><Text style={styles.stepNumberText}>{hasSelectedProduct ? '✓' : '2'}</Text></View>
+          <View style={styles.stepCopy}><Text style={styles.stepTitle}>{hasSelectedProduct ? 'Produs selectat' : 'Introdu produsul'}</Text><Text style={styles.stepHint}>Codul producătorului este principal; EAN-ul este opțional.</Text></View>
         </View>
 
-        {bin && !ean ? (
-          <ScanInput placeholder="SCANEAZĂ CODUL PRODUSULUI" onScan={scanProduct} disabled={scanDisabled || registering} />
+        {bin && !hasSelectedProduct ? (
+          <View style={styles.productLookupCard}>
+            <Text style={styles.quantityLabel}>COD PRODUCĂTOR</Text>
+            <TextInput
+              style={[styles.productCodeInput, styles.primaryProductCodeInput]}
+              value={productCode}
+              onChangeText={setProductCode}
+              onSubmitEditing={() => selectProduct(ean, productCode)}
+              placeholder="SCANEAZĂ SAU INTRODU CODUL PRODUCĂTORULUI"
+              maxLength={64}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!scanDisabled && !registering}
+              selectTextOnFocus
+              autoFocus
+            />
+            <Text style={styles.productCodeHint}>Identificator principal pentru căutare și echivalare.</Text>
+
+            <Text style={styles.quantityLabel}>EAN / COD DE BARE (OPȚIONAL)</Text>
+            <TextInput
+              style={styles.productCodeInput}
+              value={ean}
+              onChangeText={setEan}
+              onSubmitEditing={() => selectProduct(ean, productCode)}
+              placeholder="SCANEAZĂ EAN"
+              maxLength={50}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!scanDisabled && !registering}
+              selectTextOnFocus
+            />
+            <Text style={styles.productCodeHint}>Folosit ca identificator suplimentar.</Text>
+
+            <View style={styles.productLookupActions}>
+              <TouchableOpacity
+                style={[buttonStyles.buttonPrimary, (!(ean.trim() || productCode.trim()) || scanDisabled || registering) && buttonStyles.buttonDisabled]}
+                onPress={() => selectProduct(ean, productCode)}
+                disabled={!(ean.trim() || productCode.trim()) || scanDisabled || registering}
+              >
+                <Text style={buttonStyles.buttonPrimaryText}>CONFIRMĂ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={buttonStyles.buttonSecondary}
+                onPress={() => setProductCameraVisible(true)}
+                disabled={scanDisabled || registering}
+              >
+                <Text style={buttonStyles.buttonSecondaryText}>▣ CAMERĂ EAN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         ) : null}
 
-        {ean ? (
+        {hasSelectedProduct ? (
           <View style={styles.productCard}>
             <View style={styles.productTop}>
               {itemPreview?.image_url || itemPreview?.images?.[0] ? (
                 <ExpandableProductImage
                   uri={itemPreview.image_url || itemPreview.images[0]}
                   style={styles.productImage}
-                  label={`Imagine ${itemPreview?.item_name || itemPreview?.sku || ean}`}
+                  label={`Imagine ${itemPreview?.item_name || itemPreview?.sku || productCode || ean}`}
                 />
               ) : (
                 <View style={styles.productImagePlaceholder}>
-                  <Text style={styles.productImagePlaceholderText}>{hasTecDocMatch ? 'TECDOC' : 'EAN'}</Text>
+                  <Text style={styles.productImagePlaceholderText}>{hasTecDocMatch ? 'TECDOC' : 'COD'}</Text>
                 </View>
               )}
               <View style={styles.productCopy}>
                 {hasTecDocMatch ? <Text style={styles.tecdocBrand}>{itemPreview?.tecdoc_brand || 'TECDOC'}</Text> : null}
                 <Text style={styles.productName}>{itemPreview?.tecdoc_name || itemPreview?.item_name || 'Produs'}</Text>
-                <Text style={styles.productSku}>{itemPreview?.tecdoc_code || itemPreview?.sku || ean}</Text>
-                <Text style={styles.productEan}>COD SCANAT {ean}</Text>
+                <Text style={styles.productSku}>{itemPreview?.tecdoc_code || itemPreview?.sku || productCode || ean}</Text>
+                {productCode ? <Text style={styles.productEan}>COD PRODUCĂTOR {productCode}</Text> : null}
+                {ean ? <Text style={styles.productEan}>EAN {ean}</Text> : null}
                 {isManualProduct ? <Text style={styles.knownBadge}>PRODUS MANUAL SALVAT</Text> : hasTecDocMatch
                   ? <Text style={styles.knownBadge}>ECHIVALAT TECDOC</Text>
                   : <Text style={styles.pendingBadge}>FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU</Text>}
               </View>
             </View>
 
-            <Text style={styles.quantityLabel}>COD PRODUS (OPȚIONAL)</Text>
+            <Text style={styles.quantityLabel}>COD PRODUCĂTOR</Text>
             <TextInput
               style={styles.productCodeInput}
               value={productCode}
               onChangeText={setProductCode}
-              placeholder="EX. ATK 03.03.054"
+              placeholder="EX. MANN-FILTER W 79"
               maxLength={100}
               autoCapitalize="characters"
               autoCorrect={false}
               selectTextOnFocus
             />
+            <Text style={styles.productCodeHint}>Codul producătorului se salvează cu produsul și este folosit la echivalare.</Text>
 
             <Text style={styles.quantityLabel}>PREȚ CU TVA (RON) (OPȚIONAL)</Text>
             <TextInput
@@ -358,6 +448,15 @@ export default function StockEntryScreen({ navigation, route }) {
             >
               <Text style={buttonStyles.buttonPrimaryText}>{bin ? `ADAUGĂ ÎN ${bin.bin_code}` : 'ALEGE MAI ÎNTÂI RAFTUL'}</Text>
             </TouchableOpacity>
+            {itemPreview?.provisional || itemPreview?.catalog_status === 'PENDING' ? (
+              <TouchableOpacity
+                style={[buttonStyles.buttonSecondary, styles.matchButton]}
+                onPress={() => addToBin(true)}
+                disabled={!bin || !warehouseId || !itemPreview || quantityNumber < 1}
+              >
+                <Text style={buttonStyles.buttonSecondaryText}>ADAUGĂ ȘI ÎNCEARCĂ ECHIVALAREA</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity style={[buttonStyles.buttonSecondary, styles.cancelButton]} onPress={clearProduct}>
               <Text style={buttonStyles.buttonSecondaryText}>ANULEAZĂ PRODUSUL</Text>
             </TouchableOpacity>
@@ -375,7 +474,7 @@ export default function StockEntryScreen({ navigation, route }) {
                 <View style={styles.sessionCopy}>
                   {entry.tecdocBrand ? <Text style={styles.sessionBrand}>{entry.tecdocBrand}</Text> : null}
                   <Text style={styles.sessionSku}>{entry.sku}</Text>
-                  {entry.productCode ? <Text style={styles.sessionProductCode}>Cod produs: {entry.productCode}</Text> : null}
+                  {entry.productCode ? <Text style={styles.sessionProductCode}>Cod producător: {entry.productCode}</Text> : null}
                   {entry.price != null ? <Text style={styles.sessionPrice}>Preț: {Number(entry.price).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON cu TVA</Text> : null}
                   <Text style={styles.sessionName}>{entry.name}</Text>
                   {entry.syncing ? <Text style={styles.sessionSyncing}>Se sincronizează…</Text> : null}
@@ -384,7 +483,8 @@ export default function StockEntryScreen({ navigation, route }) {
                       <Text style={styles.sessionFailed}>Salvare eșuată · REÎNCEARCĂ</Text>
                     </TouchableOpacity>
                   ) : null}
-                  {!entry.syncing && !entry.failed && entry.pending ? <Text style={styles.sessionPending}>În așteptare TecDoc</Text> : null}
+                  {entry.matchMessage ? <Text style={entry.pending ? styles.sessionPending : styles.sessionMatched}>{entry.matchMessage}</Text> : null}
+                  {!entry.syncing && !entry.failed && entry.pending && !entry.matchMessage ? <Text style={styles.sessionPending}>În așteptare TecDoc</Text> : null}
                 </View>
                 <View style={styles.sessionActions}>
                   <View style={styles.sessionQuantity}>
@@ -406,6 +506,7 @@ export default function StockEntryScreen({ navigation, route }) {
           </View>
         ) : null}
       </ScrollView>
+      <CameraScannerModal visible={productCameraVisible} onClose={() => setProductCameraVisible(false)} onScan={handleProductCameraScan} />
       <ErrorPopup visible={Boolean(error)} message={error} onDismiss={clearError} />
     </View>
   );
@@ -428,6 +529,9 @@ const styles = StyleSheet.create({
   newBinCard: { padding: 14, marginTop: -8, marginBottom: 20, borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: radii.card, backgroundColor: '#fff7ed' },
   newBinTitle: { color: colors.warning, fontFamily: fonts.mono, fontSize: 13, fontWeight: '800' },
   newBinHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 5, marginBottom: 12 },
+  productLookupCard: { borderWidth: 1.5, borderColor: colors.inputBorder, borderRadius: radii.card, backgroundColor: '#fff', padding: 14, marginBottom: 16 },
+  primaryProductCodeInput: { borderColor: colors.accentRed, borderWidth: 2 },
+  productLookupActions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   productCard: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card, backgroundColor: colors.cardBg, padding: 14, marginBottom: 16 },
   productTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
   productCopy: { flex: 1, minWidth: 0 },
@@ -442,11 +546,13 @@ const styles = StyleSheet.create({
   knownBadge: { alignSelf: 'flex-start', color: colors.success, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, marginTop: 7, fontFamily: fonts.mono, fontSize: 9, fontWeight: '800' },
   quantityLabel: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginBottom: 6 },
   productCodeInput: { minHeight: 52, borderWidth: 1, borderColor: colors.inputBorder, borderRadius: radii.button, color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', backgroundColor: '#fff', paddingHorizontal: 12, marginBottom: 16 },
+  productCodeHint: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: -10, marginBottom: 16 },
   quantityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   quantityButton: { width: 54, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.inputBorder, backgroundColor: '#eff6ff' },
   quantityButtonText: { color: colors.accentRed, fontSize: 26 },
   quantityInput: { flex: 1, minHeight: 52, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.inputBorder, color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 21, fontWeight: '800', textAlign: 'center', backgroundColor: '#fff' },
   cancelButton: { marginTop: 8 },
+  matchButton: { marginTop: 8 },
   sessionSection: { marginTop: 4 },
   sessionTitle: { color: colors.textMuted, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginBottom: 8 },
   sessionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card, backgroundColor: '#fff' },
@@ -458,6 +564,7 @@ const styles = StyleSheet.create({
   sessionPrice: { color: colors.success, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', marginTop: 2 },
   sessionName: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
   sessionPending: { color: colors.warning, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  sessionMatched: { color: colors.success, fontSize: 10, fontWeight: '700', marginTop: 3 },
   sessionSyncing: { color: colors.accentRed, fontSize: 10, fontWeight: '700', marginTop: 3 },
   sessionFailed: { color: colors.danger, fontFamily: fonts.mono, fontSize: 10, fontWeight: '800', marginTop: 5 },
   sessionQuantity: { alignItems: 'flex-end' },

@@ -38,11 +38,21 @@ describe('instant stock-entry feedback', () => {
     expect(source).toContain('FĂRĂ ECHIVALARE · SE SALVEAZĂ PENTRU MAI TÂRZIU');
   });
 
-  it('lets the operator save an optional product code with the stock entry', () => {
-    expect(source).toContain('COD PRODUS (OPȚIONAL)');
+  it('matches the web stock-entry identity flow: manufacturer code first, EAN optional', () => {
+    expect(source).toContain('COD PRODUCĂTOR');
+    expect(source).toContain('EAN / COD DE BARE (OPȚIONAL)');
+    expect(source).toContain('Identificator principal pentru căutare și echivalare.');
+    expect(source).toMatch(/lookupCode = nextProductCode \|\| nextEan/);
+    expect(source).toMatch(/allow_missing=1/);
     expect(source).toMatch(/product_code: entry\.productCode/);
     expect(source).toMatch(/productCode: productCode\.trim\(\)/);
-    expect(source).toContain('Cod produs: {entry.productCode}');
+    expect(source).toContain('Cod producător: {entry.productCode}');
+  });
+
+  it('can save and trigger the same automatic-equivalence attempt as the web flow', () => {
+    expect(source).toContain('ADAUGĂ ȘI ÎNCEARCĂ ECHIVALAREA');
+    expect(source).toContain('/api/catalog-discovery/queue/bulk-match-connex');
+    expect(source).toContain('/api/catalog-discovery/queue/bulk-match');
   });
 
   it('lets the operator save a VAT-inclusive price with the stock entry', () => {

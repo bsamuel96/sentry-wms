@@ -24,7 +24,7 @@ const FUNCTIONS = [
   { key: 'pick', label: 'COMENZI DESCHISE', sub: 'Selectează și colectează', screen: 'PickScan', accent: 'red' },
   { key: 'pack', label: 'AMBALARE', sub: 'Verifică și ambalează', screen: 'Pack', accent: 'red' },
   { key: 'receive', label: 'RECEPȚIE', sub: 'Recepție comandă furnizor', screen: 'Receive', accent: 'copper' },
-  { key: 'stock-entry', permission: 'receive', label: 'LOCAȚII ȘI STOC', sub: 'Scanează locații, EAN și cantități', screen: 'StockEntry', accent: 'copper' },
+  { key: 'stock-entry', permission: 'receive', label: 'LOCAȚII ȘI STOC', sub: 'Locații, cod producător, EAN și cantități', screen: 'StockEntry', accent: 'copper' },
   { key: 'putaway', label: 'DEPOZITARE', sub: 'Așezare în locație', screen: 'PutAway', accent: 'copper' },
   { key: 'transfer', label: 'TRANSFER', sub: 'Dintr-o locație în alta', screen: 'Transfer', accent: 'gray' },
   { key: 'count', label: 'INVENTAR', sub: 'Numără stocul', screen: 'Count', accent: 'gray' },
